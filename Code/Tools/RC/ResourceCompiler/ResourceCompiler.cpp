@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 // ResourceCompiler.cpp: Defines the entry point for the console application.
 
@@ -18,7 +18,8 @@
 #include "Config.h"
 #include "CfgFile.h"
 #include "FileUtil.h"
-#include "IConvertor.h"
+#include "IConverter.h"
+#include "AssetManager/AssetManager.h"
 #include "CrashHandler.h"
 #include "CpuInfo.h"
 #include <CryString/CryPath.h>
@@ -29,7 +30,7 @@
 #include "ICryXML.h"
 #include "IXmlSerializer.h"
 #include "MathHelpers.h"
-#include "NameConvertor.h"
+#include "NameConverter.h"
 #include <CryCore/CryCrc32.h>
 #include "PropertyVars.h"
 #include <CryCore/StlUtils.h>
@@ -42,6 +43,7 @@
 
 #include <psapi.h> // GetProcessMemoryInfo()
 #include <cctype> // tolower
+#include <Shellapi.h>
 
 #pragma comment( lib, "Version.lib" )
 
@@ -88,6 +90,7 @@ ResourceCompiler::ResourceCompiler()
 	m_numWarnings = 0;
 	m_numErrors = 0;
 	m_tlsIndex_pThreadData = 0;
+	m_pAssetManager.reset(new CAssetManager(this));
 
 	InitializeThreadIds();
 }
@@ -122,9 +125,9 @@ void ResourceCompiler::FinishProgress()
 }
 
 //////////////////////////////////////////////////////////////////////////
-void ResourceCompiler::RegisterConvertor(const char* name, IConvertor* conv)
+void ResourceCompiler::RegisterConverter(const char* name, IConverter* conv)
 {
-	m_extensionManager.RegisterConvertor(name, conv, this);
+	m_extensionManager.RegisterConverter(name, conv, this);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -251,7 +254,7 @@ struct RcThreadData
 	FilesToConvert* pFilesToConvert;
 	unsigned long tlsIndex_pThreadData;	  // copy of private rc->m_tlsIndex_pThreadData
 	int threadId;
-	IConvertor* convertor;
+	IConverter* converter;
 	ICompiler* compiler;
 	const IConfig* config;
 
@@ -268,7 +271,7 @@ static void CompileFilesMultiThreaded(
 	unsigned long a_tlsIndex_pThreadData,
 	FilesToConvert& a_files,
 	int threadCount,
-	IConvertor* convertor,
+	IConverter* converter,
 	const IConfig* config)
 {
 	assert(pRC);
@@ -291,14 +294,14 @@ static void CompileFilesMultiThreaded(
 		RCLog("Spawning %d thread%s", threadCount, ((threadCount > 1) ? "s" : ""));
 		RCLog("");
 
-		// Initialize the convertor
+		// Initialize the converter
 		{
-			ConvertorInitContext initContext;
+			ConverterInitContext initContext;
 			initContext.config = config;
 			initContext.inputFiles = a_files.m_inputFiles.empty() ? 0 : &a_files.m_inputFiles[0];
 			initContext.inputFileCount = a_files.m_inputFiles.size();
 
-			convertor->Init(initContext);
+			converter->Init(initContext);
 		}
 
 		// Initialize the thread data for each thread.
@@ -306,8 +309,8 @@ static void CompileFilesMultiThreaded(
 		for (int threadIndex = 0; threadIndex < threadCount; ++threadIndex)
 		{
 			threadData[threadIndex].rc = pRC;
-			threadData[threadIndex].convertor = convertor;
-			threadData[threadIndex].compiler = convertor->CreateCompiler();
+			threadData[threadIndex].converter = converter;
+			threadData[threadIndex].compiler = converter->CreateCompiler();
 			threadData[threadIndex].config = config;
 			threadData[threadIndex].tlsIndex_pThreadData = a_tlsIndex_pThreadData;
 			threadData[threadIndex].threadId = threadIndex + 1;	 // our "thread ids" are 1-based indices
@@ -358,8 +361,8 @@ static void CompileFilesMultiThreaded(
 			threadData[threadIndex].compiler->Release();
 		}
 
-		// Clean up the convertor.
-		convertor->DeInit();
+		// Clean up the converter.
+		converter->DeInit();
 
 		if (!a_files.m_outOfMemoryFiles.empty())
 		{
@@ -403,19 +406,19 @@ static void CompileFilesSingleThreaded(
 	unsigned long a_tlsIndex_pThreadData,
 	FilesToConvert& a_files,
 	int threadCount /* unused */,
-	IConvertor* convertor,
+	IConverter* converter,
 	const IConfig* config)
 {
 	assert(pRC);
 
-	// Initialize the convertor
+	// Initialize the converter
 	{
-		ConvertorInitContext initContext;
+		ConverterInitContext initContext;
 		initContext.config = config;
 		initContext.inputFiles = a_files.m_inputFiles.empty() ? 0 : &a_files.m_inputFiles[0];
 		initContext.inputFileCount = a_files.m_inputFiles.size();
 
-		convertor->Init(initContext);
+		converter->Init(initContext);
 	}
 
 	int threadId = 0;  // Main thread.
@@ -429,8 +432,8 @@ static void CompileFilesSingleThreaded(
 
 	RcThreadData threadData;
 	threadData.rc = pRC;
-	threadData.convertor = convertor;
-	threadData.compiler = convertor->CreateCompiler();
+	threadData.converter = converter;
+	threadData.compiler = converter->CreateCompiler();
 	threadData.config = config;
 	threadData.tlsIndex_pThreadData = a_tlsIndex_pThreadData;
 	threadData.threadId = threadId;
@@ -449,7 +452,7 @@ static void CompileFilesSingleThreaded(
 	threadData.compiler->Release();
 
 	// Clean up the converter.
-	convertor->DeInit();
+	converter->DeInit();
 
 	if (!a_files.m_outOfMemoryFiles.empty())
 	{
@@ -512,7 +515,7 @@ void ResourceCompiler::GetSourceRootsReversed(const IConfig* config, std::vector
 
 	for (size_t i = 0; i < sourceRootCount; ++i)
 	{
-		sourceRootsReversed[i] = PathHelpers::GetAbsoluteAsciiPath(sourceRoots[sourceRootCount - 1 - i]);
+		sourceRootsReversed[i] = PathHelpers::GetAbsolutePath(sourceRoots[sourceRootCount - 1 - i]);
 
 		if (verbosityLevel >= 3)
 		{
@@ -610,8 +613,8 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 				for (size_t t = 0; t < tokens.size(); ++t)
 				{
 					// Scan directory and accumulate matching filenames in the list.
-					const string path = PathHelpers::Join(sourceRoot, PathHelpers::GetDirectory(tokens[t]));
-					const string pattern = PathHelpers::GetFilename(tokens[t]);
+					const string path = PathUtil::Make(sourceRoot, PathHelpers::GetDirectory(tokens[t]));
+					const string pattern = PathUtil::GetFile(tokens[t]);
 					RCLog("Scanning directory '%s' for '%s'...", path.c_str(), pattern.c_str());
 					std::vector<string> filenames;
 					FileUtil::ScanDirectory(path, pattern, filenames, bRecursive, targetLeftPath);
@@ -627,7 +630,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 						else
 						{
 							sourceLeftPath = sourceRoot;
-							sourceInnerPathAndName = PathHelpers::Join(PathHelpers::GetDirectory(tokens[t]), filenames[i]);
+							sourceInnerPathAndName = PathUtil::Make(PathHelpers::GetDirectory(tokens[t]), filenames[i]);
 						}
 						AddRcFile(files, addedFiles, sourceRootsReversed, sourceLeftPath, sourceInnerPathAndName, targetLeftPath);
 					}
@@ -648,7 +651,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 			for (size_t i = 0; i < sourceRootsReversed.size(); ++i)
 			{
 				const string& sourceRoot = sourceRootsReversed[i];
-				const DWORD dwFileSpecAttr = GetFileAttributes(PathHelpers::Join(sourceRoot, filespec));
+				const DWORD dwFileSpecAttr = GetFileAttributes(PathUtil::Make(sourceRoot, filespec));
 
 				if (dwFileSpecAttr == INVALID_FILE_ATTRIBUTES)
 				{
@@ -656,7 +659,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 					RCLog("RC can't find file '%s'. Will try to find the file in .pak files.", filespec.c_str());
 					if (sourceRoot.empty())
 					{
-						AddRcFile(files, addedFiles, sourceRootsReversed, PathHelpers::GetDirectory(filespec), PathHelpers::GetFilename(filespec), targetLeftPath);
+						AddRcFile(files, addedFiles, sourceRootsReversed, PathHelpers::GetDirectory(filespec), PathUtil::GetFile(filespec), targetLeftPath);
 					}
 					else
 					{
@@ -673,7 +676,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 						// Let's assume that the user wants to export every file in the 
 						// directory (with subdirectories if bRecursive == true) or
 						// that he wants to export a file specified in /file option.
-						const string path = PathHelpers::Join(sourceRoot, filespec);
+						const string path = PathUtil::Make(sourceRoot, filespec);
 						const string pattern = config->GetAsString("file", "*.*", "*.*");
 						RCLog("Scanning directory '%s' for '%s'...", path.c_str(), pattern.c_str());
 						std::vector<string> filenames;
@@ -690,7 +693,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 							else
 							{
 								sourceLeftPath = sourceRoot;
-								sourceInnerPathAndName = PathHelpers::Join(filespec, filenames[i]);
+								sourceInnerPathAndName = PathUtil::Make(filespec, filenames[i]);
 							}
 							AddRcFile(files, addedFiles, sourceRootsReversed, sourceLeftPath, sourceInnerPathAndName, targetLeftPath);
 						}
@@ -700,7 +703,7 @@ bool ResourceCompiler::CollectFilesToCompile(const string& filespec, std::vector
 						// we found a regular file
 						if (sourceRoot.empty())
 						{
-							AddRcFile(files, addedFiles, sourceRootsReversed, PathHelpers::GetDirectory(filespec), PathHelpers::GetFilename(filespec), targetLeftPath);
+							AddRcFile(files, addedFiles, sourceRootsReversed, PathHelpers::GetDirectory(filespec), PathUtil::GetFile(filespec), targetLeftPath);
 						}
 						else
 						{
@@ -748,8 +751,6 @@ void ParseCommandLine(const std::vector<string>& args, IConfig* config, string& 
 
 bool ResourceCompiler::CompileSingleFileNested(const string& fileSpec, const std::vector<string>& args)
 {
-	std::vector<RcFile> list;
-	list.push_back(RcFile("", fileSpec, ""));
 
 	MultiplatformConfig config = m_multiConfig;
 
@@ -760,6 +761,11 @@ bool ResourceCompiler::CompileSingleFileNested(const string& fileSpec, const std
 
 	string unusedFileSpec;
 	ParseCommandLine(extArgs, &config.getConfig(), unusedFileSpec);
+	std::vector<RcFile> list;
+	// TODO we need to figure out how to not pass sourceroot for nested calls
+	// for now we just don't use it together with target root
+	//list.push_back(RcFile(PathHelpers::CanonicalizePath(config.getConfig().GetAsString("sourceroot", "", "")), fileSpec, PathHelpers::CanonicalizePath(config.getConfig().GetAsString("targetroot", "", ""))));
+	list.push_back(RcFile("", fileSpec, ""));
 
 	return CompileFiles(list, &config.getConfig(), CompileFilesSingleThreaded);
 }
@@ -796,40 +802,40 @@ bool ResourceCompiler::CompileFiles(const std::vector<RcFile>& files, const ICon
 
 	//////////////////////////////////////////////////////////////////////////
 
-	// Split up the files based on the convertor they are to use.
-	typedef std::map<IConvertor*, std::vector<RcFile> > FileConvertorMap;
-	FileConvertorMap fileConvertorMap;
+	// Split up the files based on the converter they are to use.
+	typedef std::map<IConverter*, std::vector<RcFile> > FileConverterMap;
+	FileConverterMap fileConverterMap;
 	for (size_t i = 0; i < filesToConvert.m_allFiles.size(); ++i)
 	{
-		string filenameForConvertorSearch;
+		string filenameForConverterSearch;
 		{
 			const string sOverWriteExtension = config->GetAsString("overwriteextension", "", "");
 			if (!sOverWriteExtension.empty())
 			{
-				filenameForConvertorSearch = string("filename.") + sOverWriteExtension;
+				filenameForConverterSearch = string("filename.") + sOverWriteExtension;
 			}
 			else
 			{
-				filenameForConvertorSearch = filesToConvert.m_allFiles[i].m_sourceInnerPathAndName;
+				filenameForConverterSearch = filesToConvert.m_allFiles[i].m_sourceInnerPathAndName;
 			}
 		}
 
-		IConvertor* const convertor = m_extensionManager.FindConvertor(filenameForConvertorSearch.c_str());
+		IConverter* const converter = m_extensionManager.FindConverter(filenameForConverterSearch.c_str());
 
-		if (!convertor)
+		if (!converter)
 		{
-			RCLogWarning("Cannot find convertor for %s", filenameForConvertorSearch);
+			RCLogWarning("Cannot find converter for %s", filenameForConverterSearch);
 			filesToConvert.m_allFiles.erase(filesToConvert.m_allFiles.begin() + i);
 			--i;
 			continue;
 		}
 
-		FileConvertorMap::iterator convertorIt = fileConvertorMap.find(convertor);
-		if (convertorIt == fileConvertorMap.end())
+		FileConverterMap::iterator converterIt = fileConverterMap.find(converter);
+		if (converterIt == fileConverterMap.end())
 		{
-			convertorIt = fileConvertorMap.insert(std::make_pair(convertor, std::vector<RcFile>())).first;
+			converterIt = fileConverterMap.insert(std::make_pair(converter, std::vector<RcFile>())).first;
 		}
-		(*convertorIt).second.push_back(filesToConvert.m_allFiles[i]);
+		(*converterIt).second.push_back(filesToConvert.m_allFiles[i]);
 	}
 
 	if (GetVerbosityLevel() > 0)
@@ -845,41 +851,41 @@ bool ResourceCompiler::CompileFiles(const std::vector<RcFile>& files, const ICon
 		RCLog("");
 	}
 
-	// Loop through all the convertors that we need to invoke.
-	for (FileConvertorMap::iterator convertorIt = fileConvertorMap.begin(); convertorIt != fileConvertorMap.end(); ++convertorIt)
+	// Loop through all the converters that we need to invoke.
+	for (FileConverterMap::iterator converterIt = fileConverterMap.begin(); converterIt != fileConverterMap.end(); ++converterIt)
 	{
 		assert(filesToConvert.m_inputFiles.empty());
 		assert(filesToConvert.m_outOfMemoryFiles.empty());
 
-		IConvertor* const convertor = (*convertorIt).first;
-		assert(convertor);
+		IConverter* const converter = (*converterIt).first;
+		assert(converter);
 
-		// Check whether this convertor is thread-safe.
+		// Check whether this converter is thread-safe.
 		assert(m_maxThreads >= 1);
 		int threadCount = m_maxThreads;
-		if ((threadCount > 1) && (!convertor->SupportsMultithreading()))
+		if ((threadCount > 1) && (!converter->SupportsMultithreading()))
 		{
-			RCLog("/threads specified, but convertor does not support multi-threading. Falling back to single-threading.");
+			RCLog("/threads specified, but converter does not support multi-threading. Falling back to single-threading.");
 			threadCount = 1;
 		}
 
-		const std::vector<RcFile>& convertorFiles = (*convertorIt).second;
-		assert(convertorFiles.size()>0);
+		const std::vector<RcFile>& converterFiles = (*converterIt).second;
+		assert(converterFiles.size()>0);
 
 		// implementation note: we insert filenames starting from last, because converting function will take filenames one by one from the end(!) of the array
-		for(int i = convertorFiles.size() - 1; i >= 0; --i)
+		for(int i = converterFiles.size() - 1; i >= 0; --i)
 		{
-			filesToConvert.m_inputFiles.push_back(convertorFiles[i]);
+			filesToConvert.m_inputFiles.push_back(converterFiles[i]);
 		}
 
 		LogMemoryUsage(false);
 
-		if (!m_cacheFolder.empty() && convertor->IsCacheable())
+		if (!m_cacheFolder.empty() && converter->IsCacheable())
 		{
-			TryToGetFilesFromCache(filesToConvert, convertor);
+			TryToGetFilesFromCache(filesToConvert, converter);
 		}
 
-		compileFiles(this, m_tlsIndex_pThreadData, filesToConvert, threadCount, convertor, config);
+		compileFiles(this, m_tlsIndex_pThreadData, filesToConvert, threadCount, converter, config);
 
 		assert(filesToConvert.m_inputFiles.empty());
 		assert(filesToConvert.m_outOfMemoryFiles.empty());
@@ -916,7 +922,7 @@ bool ResourceCompiler::CompileFiles(const std::vector<RcFile>& files, const ICon
 		RCLog("");
 		for (size_t i = 0; i < numFilesFailed; ++i)
 		{
-			const string failedFilename = PathHelpers::Join(filesToConvert.m_failedFiles[i].m_sourceLeftPath, filesToConvert.m_failedFiles[i].m_sourceInnerPathAndName);
+			const string failedFilename = PathUtil::Make(filesToConvert.m_failedFiles[i].m_sourceLeftPath, filesToConvert.m_failedFiles[i].m_sourceInnerPathAndName);
 			RCLog("  %s", failedFilename.c_str());
 		}
 		RCLog("");
@@ -966,7 +972,7 @@ unsigned int WINAPI ThreadFunc(void* threadDataMemory)
 		data->pFilesToConvert->unlock();
 
 		const string sourceInnerPath = PathHelpers::GetDirectory(fileToConvert.m_sourceInnerPathAndName);
-		const string sourceFullFileName = PathHelpers::Join(fileToConvert.m_sourceLeftPath, fileToConvert.m_sourceInnerPathAndName);
+		const string sourceFullFileName = PathUtil::Make(fileToConvert.m_sourceLeftPath, fileToConvert.m_sourceInnerPathAndName);
 
 		enum EResult
 		{
@@ -1062,8 +1068,8 @@ bool ResourceCompiler::CompileFile(
 
 	MultiplatformConfig localMultiConfig = m_multiConfig;
 	const IConfig* const config = pThreadData->config;
-
-	const string targetPath = PathHelpers::Join(targetLeftPath, sourceInnerPath);
+	localMultiConfig.getConfig().AddConfig(pThreadData->config);
+	const string targetPath = PathUtil::Make(targetLeftPath, sourceInnerPath);
 
 	if (GetVerbosityLevel() >= 2)
 	{
@@ -1092,22 +1098,22 @@ bool ResourceCompiler::CompileFile(
 		{
 			bRefresh = true;
 		}
-
+		
 		pCC->SetForceRecompiling(bRefresh);
 	}
 
 	{
-		const string sourceExtension = PathHelpers::FindExtension(sourceFullFileName);
-		const string convertorExtension = config->GetAsString("overwriteextension", sourceExtension, sourceExtension);
-		pCC->SetConvertorExtension(convertorExtension);
+		const string sourceExtension = PathUtil::GetExt(sourceFullFileName);
+		const string converterExtension = config->GetAsString("overwriteextension", sourceExtension, sourceExtension);
+		pCC->SetConverterExtension(converterExtension);
 	}
 
-	const string sourceFileName = PathHelpers::GetFilename(sourceFullFileName);
+	const string sourceFileName = PathUtil::GetFile(sourceFullFileName);
 
 	pCC->SetSourceFileNameOnly(sourceFileName);
-	pCC->SetSourceFolder(PathHelpers::GetDirectory(PathHelpers::GetAbsoluteAsciiPath(sourceFullFileName)));
+	pCC->SetSourceFolder(PathHelpers::GetDirectory(PathHelpers::GetAbsolutePath(sourceFullFileName)));
 
-	const string outputFolder = PathHelpers::GetAbsoluteAsciiPath(targetPath);
+	const string outputFolder = PathHelpers::GetAbsolutePath(targetPath);
 	pCC->SetOutputFolder(outputFolder);
 
 	if (!FileUtil::EnsureDirectoryExists(outputFolder.c_str()))
@@ -1135,7 +1141,7 @@ bool ResourceCompiler::CompileFile(
 	}
 	else if (GetVerbosityLevel() == 0)
 	{
-		const string sourceInnerPathAndName = PathHelpers::AddSeparator(sourceInnerPath) + sourceFileName;
+		const string sourceInnerPathAndName = PathUtil::AddSlash(sourceInnerPath) + sourceFileName;
 		RCLog("File='%s'", sourceInnerPathAndName.c_str());
 	}
 
@@ -1421,15 +1427,19 @@ void ResourceCompiler::ShowHelp(const bool bDetailed)
 }
 
 //////////////////////////////////////////////////////////////////////////
-bool ResourceCompiler::RegisterConvertors()
+bool ResourceCompiler::RegisterConverters()
 {
 	const string strDir = GetExePath();
 	const string strMask = strDir + "ResourceCompiler*.dll";
 
 	RCLog("Searching for %s", strMask.c_str());
 
-	__finddata64_t fd;
-	intptr_t hSearch = _findfirst64(strMask.c_str(), &fd);
+	wstring widePath, wstrDir;
+	Unicode::Convert(widePath, strMask.c_str());
+	Unicode::Convert(wstrDir, strDir.c_str());
+
+	_wfinddata64_t fd;
+	intptr_t hSearch = _wfindfirst64(widePath, &fd);
 	if (hSearch == -1)
 	{
 		RCLog("Cannot find any %s", strMask.c_str());
@@ -1438,9 +1448,9 @@ bool ResourceCompiler::RegisterConvertors()
 
 	do
 	{
-		const string pluginFilename = strDir + fd.name;
+		const wstring pluginFilename = wstrDir + fd.name;
 		RCLog("Loading \"%s\"", pluginFilename.c_str());
-		HMODULE hPlugin = LoadLibraryA(pluginFilename.c_str());
+		HMODULE hPlugin = LoadLibraryW(pluginFilename.c_str());
 		if (!hPlugin)
 		{
 			const DWORD errCode = GetLastError();
@@ -1458,13 +1468,13 @@ bool ResourceCompiler::RegisterConvertors()
 			return false;
 		}
 		
-		FnRegisterConvertors fnRegister = 
+		FnRegisterConverters fnRegister = 
 			hPlugin 
-			? (FnRegisterConvertors)GetProcAddress(hPlugin, "RegisterConvertors") 
+			? (FnRegisterConverters)GetProcAddress(hPlugin, "RegisterConverters") 
 			: NULL;
 		if (!fnRegister)
 		{
-			RCLog("Error: plug-in module \"%s\" doesn't have RegisterConvertors function", pluginFilename.c_str());
+			RCLog("Error: plug-in module \"%s\" doesn't have RegisterConverters function", pluginFilename.c_str());
 			return false;
 		}
 
@@ -1481,10 +1491,14 @@ bool ResourceCompiler::RegisterConvertors()
 		if (m_pDigest)
 		{
 			CComputeDigestTimer accumulateDuration;
-			m_pDigest->UpdateFromFile(pluginFilename);
+
+			string pluginName;
+			Unicode::Convert(pluginName, pluginFilename);
+
+			m_pDigest->UpdateFromFile(pluginName);
 		}
 	}
-	while (_findnext64(hSearch, &fd) != -1);
+	while (_wfindnext64(hSearch, &fd) != -1);
 
 	RCLog("");
 
@@ -1778,16 +1792,20 @@ static void EnableCrtMemoryChecks()
 }
 
 
-static void GetCommandLineArguments(std::vector<string>& resArgs, int argc, char** argv)
+static void GetCommandLineArguments(std::vector<string>& resArgs)
 {
+	LPWSTR *argv;
+	int argc;
+
+	argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
 	resArgs.clear();
 	resArgs.reserve(argc);
 	for (int i = 0; i < argc; ++i)
 	{
-		resArgs.push_back(string(argv[i]));
+		resArgs.push_back(CryStringUtils::WStrToUTF8(argv[i]));
 	}
 }
-
 
 static void AddCommandLineArgumentsFromFile(std::vector<string>& args, const char* const pFilename)
 {
@@ -1900,7 +1918,7 @@ static void GetFileSizeAndCrc32(int64& size, uint32& crc32, const char* pFilenam
 static CrashHandler s_crashHandler;
 
 //////////////////////////////////////////////////////////////////////////
-int __cdecl main(int argc, char** argv, char** envp)
+int __cdecl main(int argCount, char** argv)
 {
 #if 0
 	EnableCrtMemoryChecks();
@@ -1913,7 +1931,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 	rc.QueryVersionInfo();
 	rc.InitPaths();
 
-	if (argc <= 1)
+	if (argCount <= 1)
 	{
 		ShowAboutDialog(rc);
 		return eRcExitCode_Success;
@@ -1921,7 +1939,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 
 	std::vector<string> args;
 	{
-		GetCommandLineArguments(args, argc, argv);
+		GetCommandLineArguments(args);
 
 		const string filename = string(rc.GetExePath()) + rc.m_filenameOptions;
 		AddCommandLineArgumentsFromFile(args, filename.c_str());
@@ -1982,7 +2000,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 	
 	rc.RegisterKey("help","lists all usable keys of the ResourceCompiler with description");
 	rc.RegisterKey("version","shows version and exits");
-	rc.RegisterKey("overwriteextension","ignore existing file extension and use specified convertor");
+	rc.RegisterKey("overwriteextension","ignore existing file extension and use specified converter");
 	rc.RegisterKey("overwritefilename","use the filename for output file (folder part is not affected)");
 	
 	rc.RegisterKey("listfile","Specify List file, List file can contain file lists from zip files like: @Levels\\Test\\level.pak|resourcelist.txt");
@@ -2036,13 +2054,13 @@ int __cdecl main(int argc, char** argv, char** envp)
 		{
 		case 3:
 		case 4:
-			ShowWaitDialog(rc, "start", args, argc);
+			ShowWaitDialog(rc, "start", args, argCount);
 			break;
 		default:
 			break;
 		}
 
-		ShowResourceCompilerLaunchInfo(args, argc, rc);
+		ShowResourceCompilerLaunchInfo(args, argCount, rc);
 
 		rc.SetTimeLogging(mainConfig.GetAsBool("logtime", true, true));
 
@@ -2182,16 +2200,16 @@ int __cdecl main(int argc, char** argv, char** envp)
 		RCLog("");
 
 		RCLog("Loading compiler plug-ins (ResourceCompiler*.dll)");
-		if (!rc.RegisterConvertors())
+		if (!rc.RegisterConverters())
 		{
 			RCLogError("A fatal error occurred when loading plug-ins (see error message(s) above). RC cannot continue.");
-			rc.UnregisterConvertors();
+			rc.UnregisterConverters();
 			return eRcExitCode_FatalError;
 		}
 		RCLog("");
 
 		RCLog("Loading zip & pak compiler module");
-		rc.RegisterConvertor("zip & pak compiler", new ZipEncryptor(&rc));
+		rc.RegisterConverter("zip & pak compiler", new ZipEncryptor(&rc));
 		RCLog("");
 
 		rc.LogMemoryUsage(false);
@@ -2200,7 +2218,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 	const bool bJobMode = config.HasKey("job");
 	if (!bJobMode && !CheckCommandLineOptions(config, 0))
 	{
-		rc.UnregisterConvertors();
+		rc.UnregisterConverters();
 		return eRcExitCode_Error;
 	}
 
@@ -2234,7 +2252,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 		bShowUsage = true;
 	}
 
-	rc.UnregisterConvertors();
+	rc.UnregisterConverters();
 
 	rc.SetTimeLogging(false);
 
@@ -2274,7 +2292,7 @@ int __cdecl main(int argc, char** argv, char** envp)
 		break;
 	case 2:
 	case 4:
-		ShowWaitDialog(rc, "finish", args, argc);
+		ShowWaitDialog(rc, "finish", args, argCount);
 		break;
 	default:
 		break;
@@ -2340,13 +2358,13 @@ void ResourceCompiler::QueryVersionInfo()
 		moduleNameW[charCount] = 0;
 	}
 
-	m_exePath = PathHelpers::GetAbsoluteAsciiPath(moduleNameW);
+	m_exePath = PathHelpers::GetAbsolutePath(moduleNameW);
 	if (m_exePath.empty())
 	{
 		printf("RC module name: fatal error");
 		exit(eRcExitCode_FatalError);
 	}
-	m_exePath = PathHelpers::AddSeparator(PathHelpers::GetDirectory(m_exePath));
+	m_exePath = PathUtil::AddSlash(PathHelpers::GetDirectory(m_exePath));
 
 	DWORD handle;
 	char ver[1024*8];
@@ -2386,27 +2404,27 @@ void ResourceCompiler::InitPaths()
 		}
 		bufferWchars[resultLength] = 0;
 
-		m_tempPath = PathHelpers::GetAbsoluteAsciiPath(bufferWchars);
+		m_tempPath = PathHelpers::GetAbsolutePath(bufferWchars);
 		if (m_tempPath.empty())
 		{
 			m_tempPath = m_exePath;
 		}
-		m_tempPath = PathHelpers::AddSeparator(m_tempPath);
+		m_tempPath = PathUtil::AddSlash(m_tempPath);
 	}
 
-	m_initialCurrentDir = PathHelpers::GetAbsoluteAsciiPath(".");
+	m_initialCurrentDir = PathHelpers::GetAbsolutePath(".");
 	if (m_initialCurrentDir.empty())
 	{
 		printf("RC InitPaths(): internal error");
 		exit(eRcExitCode_FatalError);
 	}
-	m_initialCurrentDir = PathHelpers::AddSeparator(m_initialCurrentDir);
+	m_initialCurrentDir = PathUtil::AddSlash(m_initialCurrentDir);
 }
 
 //////////////////////////////////////////////////////////////////////////
 bool ResourceCompiler::LoadIniFile()
 {
-	const string filename = PathHelpers::ToDosPath(m_exePath) + m_filenameRcIni;
+	const string filename = PathUtil::ToDosPath(m_exePath) + m_filenameRcIni;
 
 	RCLog("Loading \"%s\"", filename.c_str());
 
@@ -2444,7 +2462,7 @@ void ResourceCompiler::InitFileCache(Config & config)
 	m_cacheFolder = path;
 	m_pDigest.reset(new CDigest);
 
-	const string filename = PathHelpers::ToDosPath(m_exePath) + m_filenameRcExe;
+	const string filename = PathUtil::ToDosPath(m_exePath) + m_filenameRcExe;
 
 	{
 		CComputeDigestTimer accumulateDuration;
@@ -2453,7 +2471,7 @@ void ResourceCompiler::InitFileCache(Config & config)
 }
 
 //////////////////////////////////////////////////////////////////////////
-void ResourceCompiler::TryToGetFilesFromCache(FilesToConvert & files, IConvertor * convertor)
+void ResourceCompiler::TryToGetFilesFromCache(FilesToConvert & files, IConverter * converter)
 {
 	assert(m_pDigest);
 	assert(!m_cacheFolder.empty());
@@ -2484,11 +2502,11 @@ void ResourceCompiler::TryToGetFilesFromCache(FilesToConvert & files, IConvertor
 
 		RcFile& file = inputFiles[i];
 
-		const string sourceFullFileName = PathHelpers::Join(file.m_sourceLeftPath, file.m_sourceInnerPathAndName);
-		const string sourceFileName = PathHelpers::GetFilename(file.m_sourceInnerPathAndName);
+		const string sourceFullFileName = PathUtil::Make(file.m_sourceLeftPath, file.m_sourceInnerPathAndName);
+		const string sourceFileName = PathUtil::GetFile(file.m_sourceInnerPathAndName);
 		const string sourceInnerPath = PathHelpers::GetDirectory(file.m_sourceInnerPathAndName);
-		const string targetPath = PathHelpers::Join(file.m_targetLeftPath, sourceInnerPath);
-		const string outputFolder = PathHelpers::GetAbsoluteAsciiPath(targetPath);
+		const string targetPath = PathUtil::Make(file.m_targetLeftPath, sourceInnerPath);
+		const string outputFolder = PathHelpers::GetAbsolutePath(targetPath);
 
 		FileUtil::EnsureDirectoryExists(outputFolder);
 
@@ -2561,7 +2579,7 @@ void ResourceCompiler::AddFilesToTheCache(const FilesToConvert & files)
 
 		outputFiles.clear();
 
-		const string sourceFullFileName = PathHelpers::Join(file.m_sourceLeftPath, file.m_sourceInnerPathAndName);
+		const string sourceFullFileName = PathUtil::Make(file.m_sourceLeftPath, file.m_sourceInnerPathAndName);
 
 		m_inputOutputFileList.GetOutputFiles(sourceFullFileName, outputFiles);
 
@@ -2594,6 +2612,12 @@ void ResourceCompiler::AddFilesToTheCache(const FilesToConvert & files)
 	RCLog("");
 }
 
+IAssetManager* ResourceCompiler::GetAssetManager() const
+{
+	assert(m_pAssetManager);
+	return m_pAssetManager.get();
+}
+
 //////////////////////////////////////////////////////////////////////////
 void ResourceCompiler::Init(Config& config)
 {
@@ -2612,7 +2636,7 @@ void ResourceCompiler::Init(Config& config)
 }
 
 //////////////////////////////////////////////////////////////////////////
-void ResourceCompiler::UnregisterConvertors()
+void ResourceCompiler::UnregisterConverters()
 {
 	m_extensionManager.UnregisterAll();
 }
@@ -3127,7 +3151,7 @@ void ResourceCompiler::CopyFiles(const std::vector<RcFile>& files)
 
 	const bool bRefresh = config->GetAsBool("refresh", false, true);
 
-	NameConvertor nc;
+	NameConverter nc;
 	if (!nc.SetRules(config->GetAsString("targetnameformat", "", "")))
 	{
 		return;
@@ -3137,11 +3161,11 @@ void ResourceCompiler::CopyFiles(const std::vector<RcFile>& files)
 	{
 		ShowProgress(progressString.c_str(), i, numFiles);
 
-		const string srcFilename = PathHelpers::Join(files[i].m_sourceLeftPath, files[i].m_sourceInnerPathAndName);
-		string trgFilename = PathHelpers::Join(files[i].m_targetLeftPath, files[i].m_sourceInnerPathAndName);
+		const string srcFilename = PathUtil::Make(files[i].m_sourceLeftPath, files[i].m_sourceInnerPathAndName);
+		string trgFilename = PathUtil::Make(files[i].m_targetLeftPath, files[i].m_sourceInnerPathAndName);
 		if (nc.HasRules()) 
 		{
-			const string oldFilename = PathHelpers::GetFilename(trgFilename);
+			const string oldFilename = PathUtil::GetFile(trgFilename);
 			const string newFilename = nc.GetConvertedName(oldFilename);
 			if (newFilename.empty())
 			{
@@ -3153,7 +3177,7 @@ void ResourceCompiler::CopyFiles(const std::vector<RcFile>& files)
 				{
 					RCLog("Target file name changed: %s -> %s", oldFilename.c_str(), newFilename.c_str());
 				}
-				trgFilename = PathHelpers::Join(PathHelpers::GetDirectory(trgFilename), newFilename);
+				trgFilename = PathUtil::Make(PathHelpers::GetDirectory(trgFilename), newFilename);
 			}
 		}
 
@@ -3251,7 +3275,7 @@ string ResourceCompiler::FindSuitableSourceRoot(const std::vector<string>& sourc
 		for (size_t i = 0; i < sourceRootsReversed.size(); ++i)
 		{
 			const string& sourceRoot = sourceRootsReversed[i];
-			const string fullPath = PathHelpers::Join(sourceRoot, fileName);
+			const string fullPath = PathUtil::Make(sourceRoot, fileName);
 			const DWORD fileAttribs = GetFileAttributes(fullPath);
 			if (fileAttribs == INVALID_FILE_ATTRIBUTES)
 			{
@@ -3389,8 +3413,8 @@ void ResourceCompiler::ScanForAssetReferences( std::vector<string>& outReference
 		
 		for (References::iterator it = references.begin(); it != references.end(); ++it)
 		{
-			const string ext = PathHelpers::FindExtension(*it);
-			const string dosPath = PathHelpers::ToDosPath(*it);
+			const string ext = PathUtil::GetExt(*it);
+			const string dosPath = PathUtil::ToDosPath(*it);
 
 			if (StringHelpers::EqualsIgnoreCase(ext, ddsExt))
 			{
@@ -3399,7 +3423,7 @@ void ResourceCompiler::ScanForAssetReferences( std::vector<string>& outReference
 				for (int mip = 0;; ++mip)
 				{
 					cry_sprintf(extSuffix, ".%i", mip);
-					fullPath = PathHelpers::Join(refsRoot, dosPath + extSuffix);
+					fullPath = PathUtil::Make(refsRoot, dosPath + extSuffix);
 					if (!FileUtil::FileExists(fullPath.c_str()))
 					{
 						break;
@@ -3409,7 +3433,7 @@ void ResourceCompiler::ScanForAssetReferences( std::vector<string>& outReference
 				for (int mip = 0;; ++mip)
 				{
 					cry_sprintf(extSuffix, ".%ia", mip);
-					fullPath = PathHelpers::Join(refsRoot, dosPath + extSuffix);
+					fullPath = PathUtil::Make(refsRoot, dosPath + extSuffix);
 					if (!FileUtil::FileExists(fullPath.c_str()))
 					{
 						break;
@@ -3422,7 +3446,7 @@ void ResourceCompiler::ScanForAssetReferences( std::vector<string>& outReference
 				static const char* const cgfmext = "m";
 
 				string fullPath;
-				fullPath = PathHelpers::Join(refsRoot, dosPath + cgfmext);
+				fullPath = PathUtil::Make(refsRoot, dosPath + cgfmext);
 				if (FileUtil::FileExists(fullPath.c_str()))
 				{
 					outReferences.push_back(string(*it) + cgfmext);
@@ -3430,7 +3454,7 @@ void ResourceCompiler::ScanForAssetReferences( std::vector<string>& outReference
 			}
 
 			// we are interested only in existing files
-			const string fullPath = PathHelpers::Join(refsRoot, dosPath);
+			const string fullPath = PathUtil::Make(refsRoot, dosPath);
 			if (FileUtil::FileExists(fullPath))
 			{
 				outReferences.push_back(*it);
@@ -3458,7 +3482,7 @@ static bool MatchesWildcardsSet(const string& str, const std::vector<string>& ma
 //////////////////////////////////////////////////////////////////////////
 static string GetCommonRelativePath(const CDependencyList::SFile& file)
 {
-	const string path1 = PathHelpers::ReplaceExtension(file.inputFile, PathHelpers::FindExtension(file.outputFile));
+	const string path1 = PathUtil::ReplaceExtension(file.inputFile, PathUtil::GetExt(file.outputFile));
 	const string& path2 = file.outputFile;
 
 	string::const_iterator first1 = path1.begin();
@@ -3692,7 +3716,11 @@ XmlNodeRef ResourceCompiler::LoadXml(const char* filename)
 	{
 		const bool bRemoveNonessentialSpacesFromContent = false;
 		char szErrorBuffer[1024];
-		root = pSerializer->Read(FileXmlBufferSource(filename), bRemoveNonessentialSpacesFromContent, sizeof(szErrorBuffer), szErrorBuffer);
+
+		wstring widePath;
+		Unicode::Convert(widePath, filename);
+
+		root = pSerializer->Read(FileXmlBufferSource(widePath), bRemoveNonessentialSpacesFromContent, sizeof(szErrorBuffer), szErrorBuffer);
 		if (!root)
 		{
 			RCLogError("Failed to load XML file '%s': %s", filename, szErrorBuffer);
@@ -3897,7 +3925,7 @@ int ResourceCompiler::EvaluateJobXmlNode( CPropertyVars &properties,XmlNodeRef &
 			return eRcExitCode_Success;
 		
 		const string jobFile = config->GetAsString("job", "", "");
-		const string includePath = PathHelpers::AddSeparator(PathHelpers::GetDirectory(jobFile)) + includeFile;
+		const string includePath = PathUtil::AddSlash(PathHelpers::GetDirectory(jobFile)) + includeFile;
 
 		XmlNodeRef root = LoadXml(includePath);
 		if (!root)

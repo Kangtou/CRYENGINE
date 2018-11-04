@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 
 ////////////////////////////////////////////////////////////////////////////
@@ -22,5 +22,6 @@
 
 #include "..\ResourceCompiler\IRCLog.h"
 #include "..\ResourceCompiler\IResCompiler.h"
+#include "..\ResourceCompiler\IAssetManager.h"
 
 #endif // __ResourceCompilerPC_h__

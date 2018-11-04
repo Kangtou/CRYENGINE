@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #include "StdAfx.h"
 #include "AsyncTasks.h"
 
@@ -67,11 +67,7 @@ bool CAsyncImportSceneTask::PerformTask()
 	desc.filePath = QtUtil::ToString(m_filePath);
 	desc.pCallbacks = this;
 
-	{
-		static CryCriticalSection m_fbxSdkMutex;
-		AUTO_LOCK(m_fbxSdkMutex); // The FBX SDK is not multi-threading safe.
-		m_resultScene = FbxTool::CScene::ImportFile(desc); // This is supposed to be the only place where CScene::Import() is called.
-	}
+	m_resultScene = FbxTool::CScene::ImportFile(desc); // This is supposed to be the only place where CScene::Import() is called.
 
 	return m_resultScene != nullptr;
 }
@@ -107,3 +103,4 @@ void CAsyncImportSceneTask::OnError(const char* szMessage)
 {
 	gEnv->pLog->LogError("%s", szMessage);
 }
+

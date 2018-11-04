@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 /*=============================================================================
    Parser.cpp : Script parser implementations.
@@ -16,13 +16,35 @@ char* pCurCommand;
 void SkipCharacters(char** buf, const char* toSkip)
 {
 	char theChar;
-	char* skip;
+	const char* skip;
 
 	while ((theChar = **buf) != 0)
 	{
 		if (theChar >= 0x20)
 		{
-			skip = (char*) toSkip;
+			skip = (const char*)toSkip;
+			while (*skip)
+			{
+				if (theChar == *skip)
+					break;
+				++skip;
+			}
+			if (*skip == 0)
+				return;
+		}
+		++*buf;
+	}
+}
+void SkipCharacters(const char** buf, const char* toSkip)
+{
+	char theChar;
+	const char* skip;
+
+	while ((theChar = **buf) != 0)
+	{
+		if (theChar >= 0x20)
+		{
+			skip = (const char*)toSkip;
 			while (*skip)
 			{
 				if (theChar == *skip)
@@ -64,11 +86,11 @@ bool SkipChar(unsigned int ch)
 }
 
 // Determine is this preprocessor directive belongs to first pass or second one
-bool fxIsFirstPass(char* buf)
+bool fxIsFirstPass(const char* buf)
 {
 	char com[1024];
 	char tok[256];
-	fxFillCR(&buf, com);
+	fxFillCR((char**)&buf, com);
 	char* s = com;
 	while (*s != 0)
 	{
@@ -79,7 +101,7 @@ bool fxIsFirstPass(char* buf)
 	return true;
 }
 
-static void fxAddMacro(char* Name, char* Macro, FXMacro& Macros)
+static void fxAddMacro(const char* Name, char* Macro, FXMacro& Macros)
 {
 	SMacroFX pr;
 
@@ -109,16 +131,6 @@ static void fxAddMacro(char* Name, char* Macro, FXMacro& Macros)
 
 void fxParserInit(void)
 {
-#if defined(D3DX_SDK_VERSION)
-	// Needed for a workaround for the optimization rule problem of DXSDKJune10's HLSL Compiler (9.29.952.3111)
-	// See: http://support.microsoft.com/kb/2448404
-	// Causes cracks in tessellated meshes
-	char sdkVer[4];
-	_itoa_s(D3DX_SDK_VERSION, sdkVer, 4);
-	fxAddMacro("D3DX_SDK_VERSION", sdkVer, sStaticMacros);
-#else
-	fxAddMacro("D3DX_SDK_VERSION", "0", sStaticMacros);
-#endif
 }
 
 void fxRegisterEnv(const char* szStr)
@@ -254,7 +266,7 @@ int fxFillCR(char** buf, char* dst)
 
 //================================================================================
 
-bool shGetBool(char* buf)
+bool shGetBool(const char* buf)
 {
 	if (!buf)
 		return false;
@@ -354,7 +366,7 @@ uint64 shGetHex64(const char* buf)
 #endif
 }
 
-void shGetVector(char* buf, Vec3& v)
+void shGetVector(const char* buf, Vec3& v)
 {
 	if (!buf)
 		return;
@@ -362,7 +374,7 @@ void shGetVector(char* buf, Vec3& v)
 	assert(res);
 }
 
-void shGetVector(char* buf, float v[3])
+void shGetVector(const char* buf, float v[3])
 {
 	if (!buf)
 		return;
@@ -370,7 +382,7 @@ void shGetVector(char* buf, float v[3])
 	assert(res);
 }
 
-void shGetVector4(char* buf, Vec4& v)
+void shGetVector4(const char* buf, Vec4& v)
 {
 	if (!buf)
 		return;
@@ -542,7 +554,7 @@ void shGetColor(const char* buf, ColorF& v)
 	//v.Clamp();
 }
 
-void shGetColor(char* buf, float v[4])
+void shGetColor(const char* buf, float v[4])
 {
 	char name[64];
 
@@ -687,15 +699,15 @@ char* GetSubText(char** buf, char open, char close)
 	return result;
 }
 
-inline static int IsComment(char** buf)
+inline static int IsComment(const char* buf)
 {
-	if (!(*buf))
+	if (!buf)
 		return 0;
 
-	if ((*buf)[0] == '/' && (*buf)[1] == '/')
+	if (buf[0] == '/' && buf[1] == '/')
 		return 2;
 
-	if ((*buf)[0] == '/' && (*buf)[1] == '*')
+	if (buf[0] == '/' && buf[1] == '*')
 		return 3;
 
 	return 0;
@@ -706,7 +718,7 @@ void SkipComments(char** buf, bool bSkipWhiteSpace)
 	int n;
 	static int m;
 
-	while (n = IsComment(buf))
+	while ((n = IsComment(*buf)) != 0)
 	{
 		switch (n)
 		{
@@ -751,7 +763,7 @@ void SkipComments(char** buf, bool bSkipWhiteSpace)
 	}
 }
 
-void fxSkipTillCR(char** buf)
+void fxSkipTillCR(const char** buf)
 {
 	char ch;
 	while ((ch = **buf) != 0)
@@ -762,7 +774,7 @@ void fxSkipTillCR(char** buf)
 	}
 }
 
-bool fxCheckMacroses(char** str, int nPass)
+bool fxCheckMacroses(const char** str, int nPass)
 {
 	char tmpBuf[1024];
 	byte bRes[64];
@@ -796,7 +808,7 @@ bool fxCheckMacroses(char** str, int nPass)
 				tmpBuf[nD++] = **str;
 				++*str;
 			}
-			char* s = &tmpBuf[0];
+			const char* s = &tmpBuf[0];
 			bRes[nLevel] = fxCheckMacroses(&s, nPass);
 			nLevel++;
 			bOr[nLevel] = 255;
@@ -816,7 +828,7 @@ bool fxCheckMacroses(char** str, int nPass)
 			tmpBuf[n] = 0;
 			if (tmpBuf[0] != 0)
 			{
-				char* s = tmpBuf;
+				const char* s = tmpBuf;
 				bool bNeg = false;
 				if (s[0] == '!')
 				{
@@ -851,7 +863,7 @@ bool fxCheckMacroses(char** str, int nPass)
 		SkipCharacters(str, kWhiteSpace);
 		if (**str == 0)
 			break;
-		char* s = *str;
+		const char* s = *str;
 		if (s[0] == '|' && s[1] == '|')
 		{
 			bOr[nLevel] = true;
@@ -898,7 +910,7 @@ bool fxIgnorePreprBlock(char** buf)
 			char* b = *buf;
 			while ((ch = **buf) != 0)
 			{
-				if (ch == '/' && IsComment(buf))
+				if (ch == '/' && IsComment(*buf))
 					break;
 				if (!SkipChar(ch))
 					break;
@@ -951,7 +963,7 @@ bool fxIgnorePreprBlock(char** buf)
 		}
 		while ((ch = **buf))
 		{
-			if (ch == '/' && IsComment(buf))
+			if (ch == '/' && IsComment(*buf))
 				break;
 			if (SkipChar((unsigned)ch))
 				break;
@@ -990,7 +1002,7 @@ start:
 			bPrepr = true;
 			fxFillPr(buf, nam);
 			fxFillCR(buf, nam);
-			char* s = &nam[0];
+			const char* s = &nam[0];
 			bool bRes = fxCheckMacroses(&s, 0);
 			if (b[2] == 'n')
 				bRes = !bRes;
@@ -1042,7 +1054,7 @@ start:
 			else
 			{
 				fxFillCR(buf, nam);
-				char* s = &nam[0];
+				const char* s = &nam[0];
 				bool bRes = fxCheckMacroses(&s, 0);
 				if (!bRes)
 					fxIgnorePreprBlock(buf);

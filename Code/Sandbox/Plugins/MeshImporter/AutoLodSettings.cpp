@@ -1,14 +1,14 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #include <StdAfx.h>
 #include "AutoLodSettings.h"
 
 #include <CryString/CryString.h>
 #include <CrySerialization/IArchive.h>
-#include <yasli/Archive.h>
-#include <yasli/STL.h>
-#include <yasli/Enum.h>
-#include <yasli/JSONIArchive.h>
-#include <yasli/JSONOArchive.h>
+#include <CrySerialization/yasli/Archive.h>
+#include <CrySerialization/yasli/STL.h>
+#include <CrySerialization/yasli/Enum.h>
+#include <CrySerialization/yasli/JSONIArchive.h>
+#include <CrySerialization/yasli/JSONOArchive.h>
 
 void CAutoLodSettings::sGlobalParams::Serialize(yasli::Archive& ar)
 {
@@ -73,3 +73,4 @@ void CAutoLodSettings::Serialize(yasli::Archive& ar)
 	ar(m_globalParams, "globalparams", "GlobalParams");
 	ar(m_nodeParams, "nodeparams", "NodeParams");
 }
+

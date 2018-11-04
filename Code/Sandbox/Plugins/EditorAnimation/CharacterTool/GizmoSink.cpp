@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -81,7 +81,7 @@ Manip::SSpaceAndIndex CharacterSpaceProvider::FindSpaceIndexByName(int spaceType
 	    spaceType == Serialization::SPACE_JOINT_WITH_CHARACTER_ROTATION)
 	{
 		IDefaultSkeleton& defaultSkeleton = pICharacterInstance->GetIDefaultSkeleton();
-		si.m_jointCRC32 = CCrc32::ComputeLowercase(name);
+		si.m_jointCRC32 = CCrc32::ComputeLowercase(name + (*name == '$'));
 		return si;
 	}
 
@@ -292,6 +292,7 @@ int GizmoSink::Write(const Serialization::LocalPosition& decorator, const Serial
 	e.caps = Manip::CAP_SELECT | Manip::CAP_MOVE;
 	e.shape = Manip::SHAPE_AXES;
 	e.layer = m_currentLayer;
+	e.poseModifier = true;
 	m_scene->AddElement(e, (Manip::ElementId)handle);
 	++m_lastIndex;
 	return m_lastIndex;
@@ -344,3 +345,4 @@ void GizmoSink::SkipRead()
 }
 
 }
+

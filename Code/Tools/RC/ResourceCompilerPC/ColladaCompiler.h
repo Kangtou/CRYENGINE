@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 //
 //  Crytek Engine Source File.
 //  Copyright (C), Crytek Studios, 2006.
@@ -32,7 +32,7 @@ public:
 	ColladaCompiler(ICryXML* pCryXML, IPakSystem* pPakSystem);
 	virtual ~ColladaCompiler();
 
-	// IConvertor methods.
+	// IConverter methods.
 	virtual const char* GetExt(int index) const;
 
 	// ICompiler methods.

@@ -1,9 +1,11 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
+
 #include "StdAfx.h"
 #include <assert.h>                         // assert()
 
 #include "IRCLog.h"                         // IRCLog
 #include "IConfig.h"                        // IConfig
+#include "IAssetManager.h"
 
 #include "ImageCompiler.h"                  // CImageCompiler
 #include "ImageUserDialog.h"                // CImageUserDialog
@@ -37,9 +39,8 @@
 
 #include "FileUtil.h"                       // GetFileSize()
 
+#include <CryString/CryPath.h>
 #include "StringHelpers.h"
-
-#include "Metadata/MetadataHelpers.h"
 
 #include <CryCore/ToolsHelpers/ResourceCompilerHelper.h>
 
@@ -84,7 +85,7 @@ bool CImageCompiler::CheckForExistingPreset(const ConvertContext& CC, const stri
 // constructor
 #pragma warning(push)
 #pragma warning(disable:4355) // 'this': used in base member initializer list
-CImageCompiler::CImageCompiler(const CImageConvertor::PresetAliases& presetAliases)
+CImageCompiler::CImageCompiler(const CImageConverter::PresetAliases& presetAliases)
 	: m_Progress(*this)
 	, m_presetAliases(presetAliases)
 {
@@ -181,7 +182,7 @@ bool CImageCompiler::SaveOutput(const ImageObject* pImageObject, const char* szT
 
 	const uint32 sizeTotal = CalcTextureMemory(pImageObject);
 
-	const string filename = PathHelpers::GetFilename(lpszPathName);
+	const string filename = PathUtil::GetFile(lpszPathName);
 	if (pImageObject->GetAttachedImage())
 	{
 		const uint32 sizeAttached = CalcTextureMemory(pImageObject->GetAttachedImage());
@@ -198,7 +199,7 @@ bool CImageCompiler::SaveOutput(const ImageObject* pImageObject, const char* szT
 	}
 
 	m_CC.pRC->AddInputOutputFilePair(m_CC.GetSourcePath(), lpszPathName);
-	return AssetManager::SaveAsset(m_CC.pRC, m_CC.config, m_CC.GetSourcePath(), { lpszPathName });
+	return m_CC.pRC->GetAssetManager()->SaveCryasset(m_CC.config, m_CC.GetSourcePath(), { lpszPathName });
 }
 
 
@@ -357,7 +358,7 @@ static void printColor(const char* msg, const float* c)
 }
 
 
-uint32 CImageCompiler::_CalcTextureMemory(const EPixelFormat pixelFormat, const uint32 dwWidth, const uint32 dwHeight, const bool bCubemap, const bool bMips)
+uint32 CImageCompiler::_CalcTextureMemory(const EPixelFormat pixelFormat, const uint32 dwWidth, const uint32 dwHeight, const bool bCubemap, const bool bMips, const uint32 compressedBlockWidth, const uint32 compressedBlockHeight)
 {
 	if (pixelFormat < 0)
 	{
@@ -380,14 +381,13 @@ uint32 CImageCompiler::_CalcTextureMemory(const EPixelFormat pixelFormat, const 
 
 		if (pFormatInfo->bCompressed)
 		{
-			const uint32 widthInBlocks = (w + (pFormatInfo->blockWidth - 1)) / pFormatInfo->blockWidth;
-			const uint32 heightInBlocks = (h + (pFormatInfo->blockHeight - 1)) / pFormatInfo->blockHeight;
-			static const uint32 pixelsPerBlock = pFormatInfo->blockWidth * pFormatInfo->blockHeight;
-			totalSize += (widthInBlocks * heightInBlocks * pixelsPerBlock * pFormatInfo->bitsPerPixel) / 8;
+			const uint32 widthInBlocks = (w + (compressedBlockWidth - 1)) / compressedBlockWidth;
+			const uint32 heightInBlocks = (h + (compressedBlockHeight - 1)) / compressedBlockHeight;
+			totalSize += widthInBlocks * heightInBlocks * pFormatInfo->bytesPerBlock;
 		}
 		else
 		{
-			totalSize += (w * h * pFormatInfo->bitsPerPixel) / 8;
+			totalSize += w * h * pFormatInfo->bytesPerBlock;
 		}
 	}
 
@@ -552,9 +552,9 @@ bool CImageCompiler::ProcessImplementation()
 	const string sourceFile = m_CC.GetSourcePath();
 
 	string settings;
-	if (!LoadInput(sourceFile.c_str(), m_CC.convertorExtension.c_str(), true, settings))
+	if (!LoadInput(sourceFile.c_str(), m_CC.converterExtension.c_str(), true, settings))
 	{
-		RCLogError("%s: LoadInput(file: '%s', ext: '%s') failed", __FUNCTION__, sourceFile.c_str(), m_CC.convertorExtension.c_str());
+		RCLogError("%s: LoadInput(file: '%s', ext: '%s') failed", __FUNCTION__, sourceFile.c_str(), m_CC.converterExtension.c_str());
 		return false;
 	}
 
@@ -595,13 +595,15 @@ bool CImageCompiler::ProcessImplementation()
 		RCLog("Saving settings to '%s':", GetOutputPath().c_str());
 		RCLog("  '%s'", settings.c_str());
 
-		if (!StringHelpers::EqualsIgnoreCase(m_CC.convertorExtension, "tif"))
+		if (!StringHelpers::EqualsIgnoreCase(m_CC.converterExtension, "tif"))
 		{
 			RCLogError("Option \"savesettings\" applies only to TIF files.");
 			return false;
 		}
 
-		return ImageTIFF::UpdateAndSaveSettingsToTIF(sourceFile.c_str(), GetOutputPath().c_str(), settings);
+		const bool isCryTif2012 = m_CC.config->GetAsBool("CryTIF2012", false, true);
+
+		return ImageTIFF::UpdateAndSaveSettingsToTIF(sourceFile.c_str(), GetOutputPath().c_str(), settings, isCryTif2012);
 	}
 
 	if (m_CC.config->HasKey("savepreset"))
@@ -626,7 +628,7 @@ bool CImageCompiler::ProcessImplementation()
 			return false;
 		}
 
-		if (!StringHelpers::EqualsIgnoreCase(m_CC.convertorExtension, "tif"))
+		if (!StringHelpers::EqualsIgnoreCase(m_CC.converterExtension, "tif"))
 		{
 			RCLogError("Option \"savepreset\" applies only to TIF files.");
 			return false;
@@ -749,7 +751,7 @@ bool CImageCompiler::ProcessImplementation()
 		RCLog("Settings read from '%s':", sourceFile.c_str());
 		RCLog("  '%s'", settings.c_str());
 
-		if (!StringHelpers::EqualsIgnoreCase(m_CC.convertorExtension, "tif"))
+		if (!StringHelpers::EqualsIgnoreCase(m_CC.converterExtension, "tif"))
 		{
 			RCLogError("Option \"cleansettings\" applies only to TIF files.");
 			return false;
@@ -848,7 +850,7 @@ string CImageCompiler::GetOutputFileNameOnly() const
 	const string sourceFileFinal = m_CC.config->GetAsString("overwritefilename", m_CC.sourceFileNameOnly.c_str(), m_CC.sourceFileNameOnly.c_str());
 	const bool bSplitForStreaming = m_CC.config->GetAsBool("streaming", false, true);
 	const bool bUseTiffExtension = 
-		StringHelpers::EqualsIgnoreCase(PathHelpers::FindExtension(m_CC.sourceFileNameOnly), "tif") &&
+		StringHelpers::EqualsIgnoreCase(PathUtil::GetExt(m_CC.sourceFileNameOnly), "tif") &&
 		(m_CC.config->GetAsBool("cleansettings", false, true) || 
 		m_CC.config->HasKey("savesettings") || 
 		m_CC.config->HasKey("savepreset"));
@@ -859,12 +861,12 @@ string CImageCompiler::GetOutputFileNameOnly() const
 		szExtension = (bSplitForStreaming ? "$dds" : "dds");
 	}
 
-	return PathHelpers::ReplaceExtension(sourceFileFinal, szExtension);
+	return PathUtil::ReplaceExtension(sourceFileFinal, szExtension);
 }
 
 string CImageCompiler::GetOutputPath() const
 {
-	return PathHelpers::Join(m_CC.GetOutputFolder(), GetOutputFileNameOnly());
+	return PathUtil::Make(m_CC.GetOutputFolder(), GetOutputFileNameOnly());
 }
 
 void CImageCompiler::AutoPreset()
@@ -910,8 +912,8 @@ bool CImageCompiler::AnalyzeWithProperties(bool autopreset, const char *szExtend
 	// add a string to the filename (before the extension)
 	if (szExtendFileName)
 	{
-		const string ext = PathHelpers::FindExtension(sOutputFileName);
-		sOutputFileName = PathHelpers::RemoveExtension(sOutputFileName) + szExtendFileName + string(".") + ext;
+		const string ext = PathUtil::GetExt(sOutputFileName);
+		sOutputFileName = PathUtil::RemoveExtension(sOutputFileName.c_str()) + szExtendFileName + string(".") + ext;
 	}
 
 	{
@@ -1078,8 +1080,8 @@ bool CImageCompiler::RunWithProperties(bool inbSave, const char *szExtendFileNam
 	// add a string to the filename (before the extension)
 	if (szExtendFileName)
 	{
-		const string ext = PathHelpers::FindExtension(sOutputFileName);
-		sOutputFileName = PathHelpers::RemoveExtension(sOutputFileName) + szExtendFileName + string(".") + ext;
+		const string ext = PathUtil::GetExt(sOutputFileName);
+		sOutputFileName = PathUtil::RemoveExtension(sOutputFileName.c_str()) + szExtendFileName + string(".") + ext;
 	}
 
 	if (m_pFinalImage)
@@ -1091,7 +1093,7 @@ bool CImageCompiler::RunWithProperties(bool inbSave, const char *szExtendFileNam
 
 	if (inbSave && m_CC.config->GetAsBool("nooutput", false, true))
 	{
-		RCLogError("%s: Process save Ext:'%s' /nooutput was specified", __FUNCTION__, m_CC.convertorExtension.c_str());
+		RCLogError("%s: Process save Ext:'%s' /nooutput was specified", __FUNCTION__, m_CC.converterExtension.c_str());
 		inbSave = false;
 	}
 
@@ -1747,11 +1749,11 @@ bool CImageCompiler::RunWithProperties(bool inbSave, const char *szExtendFileNam
 		if (szExtendFileName)
 		{
 			// Faking source filename to generate output filename with respect to postfix
-			const string outFilename = PathHelpers::GetFilename(outFile);
-			sourceFileFinal = PathHelpers::RemoveExtension(outFilename);
+			const string outFilename = PathUtil::GetFile(outFile);
+			sourceFileFinal = PathUtil::RemoveExtension(outFilename);
 			sourceFileFinal += szExtendFileName;
 
-			const string ext = PathHelpers::FindExtension(outFilename);
+			const string ext = PathUtil::GetExt(outFilename);
 			if (!ext.empty())
 			{
 				sourceFileFinal += '.';
@@ -1760,7 +1762,7 @@ bool CImageCompiler::RunWithProperties(bool inbSave, const char *szExtendFileNam
 		}
 		else
 		{
-			sourceFileFinal = PathHelpers::GetFilename(outFile);
+			sourceFileFinal = PathUtil::GetFile(outFile);
 		}
 
 		cc_split.SetSourceFileNameOnly(sourceFileFinal);
@@ -1893,7 +1895,7 @@ string CImageCompiler::GetInfoStringUI(const bool inbOrig) const
 		const PixelFormatInfo* const pFinalFormatInfo = CPixelFormats::GetPixelFormatInfo(finalFormat);
 		assert(pFinalFormatInfo);
 
-		uint32 dwMem = _CalcTextureMemory(finalFormat, dwFinalWidth, dwFinalHeight, bFinalCubemap, (dwFinalMipCount > 1));
+		uint32 dwMem = _CalcTextureMemory(finalFormat, dwFinalWidth, dwFinalHeight, bFinalCubemap, (dwFinalMipCount > 1), m_pInputImage->GetCompressedBlockWidth(), m_pInputImage->GetCompressedBlockHeight());
 
 		const char* szAlpha = pFinalFormatInfo->szAlpha;
 		const char* szAttachedStr = "";
@@ -1905,7 +1907,7 @@ string CImageCompiler::GetInfoStringUI(const bool inbOrig) const
 			assert(pAlphaFormatInfo);
 			szAlpha = pAlphaFormatInfo->szName;
 			szAttachedStr = "+";
-			dwMem += _CalcTextureMemory(alphaFormat, dwFinalWidth, dwFinalHeight, bFinalCubemap, (dwFinalMipCount > 1));
+			dwMem += _CalcTextureMemory(alphaFormat, dwFinalWidth, dwFinalHeight, bFinalCubemap, (dwFinalMipCount > 1), m_pInputImage->GetCompressedBlockWidth(), m_pInputImage->GetCompressedBlockHeight());
 		}
 
 		const uint32 dwFinalImageFlags = m_pFinalImage->GetImageFlags();
@@ -1981,7 +1983,7 @@ uint32 CImageCompiler::CalcTextureMemory(const ImageObject *pImage)
 	uint32 dwWidth, dwHeight, dwMips;
 	pImage->GetExtent(dwWidth, dwHeight, dwMips);
 
-	uint32 size = _CalcTextureMemory(pImage->GetPixelFormat(), dwWidth, dwHeight, pImage->HasCubemapCompatibleSizes(), (dwMips > 1));
+	uint32 size = _CalcTextureMemory(pImage->GetPixelFormat(), dwWidth, dwHeight, pImage->HasCubemapCompatibleSizes(), (dwMips > 1), pImage->GetCompressedBlockWidth(), pImage->GetCompressedBlockHeight());
 
 	if (pImage->GetAttachedImage())
 	{
@@ -1994,7 +1996,7 @@ uint32 CImageCompiler::CalcTextureMemory(const ImageObject *pImage)
 
 string CImageCompiler::GetUnaliasedPresetName(const string& presetName) const
 {
-	const CImageConvertor::PresetAliases::const_iterator it = m_presetAliases.find(presetName);
+	const CImageConverter::PresetAliases::const_iterator it = m_presetAliases.find(presetName);
 	if (it == m_presetAliases.end())
 	{
 		return presetName;
@@ -2032,12 +2034,12 @@ void CImageCompiler::SetPresetSettings()
 // set the stored properties to the current file and save it
 bool CImageCompiler::UpdateAndSaveConfig()
 {
-	if (!StringHelpers::EqualsIgnoreCase(m_CC.convertorExtension, "tif"))
+	if (!StringHelpers::EqualsIgnoreCase(m_CC.converterExtension, "tif"))
 	{
 		return false;
 	}
 
-	return ImageTIFF::UpdateAndSaveSettingsToTIF(m_CC.GetSourcePath(), m_CC.GetSourcePath(), &m_Props, 0, false);
+	return ImageTIFF::UpdateAndSaveSettingsToTIF(m_CC.GetSourcePath(), m_CC.GetSourcePath(), &m_Props, nullptr, false);
 }
 
 
@@ -2060,21 +2062,7 @@ void CImageCompiler::AnalyzeImageAndSuggest(const ImageObject* pSourceImage)
 		assert(hwndW);
 		SetWindowText(hwndW, "");
 
-		// check if normal map highQ compression is not a waste of memory
-		if (StringHelpers::EqualsIgnoreCase(presetName, "Normals"))
-		{
-			// force full image conversion (even if zoomed or clipped)
-			const bool bInternalPreview = m_bInternalPreview;
-			m_bInternalPreview = false;
-			const float fDXTError = pSourceImage->GetDXT1NormalsCompressionError(&m_Props);
-			m_bInternalPreview = bInternalPreview;
-
-			// empirical threshold
-			if (fDXTError < 0.02f)
-			{
-				SetWindowText(hwndW, "For this normal map you can use Normalmap_lowQ preset which has nearly the same quality and saves memory!");
-			}
-		}
+		// Here we can perform additional checks and update the text of the warning line, if necessary. See the file history for an example.
 	}
 
 	if (m_Props.GetMipRenormalize())

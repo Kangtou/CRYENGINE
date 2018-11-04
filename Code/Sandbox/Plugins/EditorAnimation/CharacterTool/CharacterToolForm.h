@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -11,7 +11,6 @@ class QViewport;
 class QMainWindow;
 class QSplitter;
 class QToolButton;
-class QTreeView;
 class QPropertyTree;
 class QBoxLayout;
 class QToolBar;
@@ -71,7 +70,8 @@ public:
 	//////////////////////////////////////////////////////////
 
 public slots:
-
+	void                OnExportAnimationLayers();
+	void                OnImportAnimationLayers();
 	void                OnFileSaveAll();
 	void                OnFileRecent();
 	void                OnFileRecentAboutToShow(QMenu* menu);
@@ -97,6 +97,8 @@ public slots:
 	void                OnDockWidgetsChanged();
 	void                OnCharacterLoaded();
 	void                OnPanelDestroyed(QObject* obj);
+	void				OnFocusChanged(QWidget *old, QWidget *now);
+	void                OnClearProxiesButton();
 
 	void                OnAnimEventPresetPanelPutEvent();
 
@@ -104,25 +106,28 @@ public slots:
 
 	IViewportMode*      ViewportMode() const { return m_mode; }
 	PlaybackPanel*      GetPlaybackPanel()   { return m_playbackPanel; }
+	bool 								ProxyMakingMode()    { return m_createProxyModeButton->isChecked(); }
+	PropertiesPanel*    GetPropertiesPanel() { return m_propertiesPanel; }
 protected:
 	bool                event(QEvent* ev) override;
 	void                closeEvent(QCloseEvent* ev);
 	bool                eventFilter(QObject* sender, QEvent* ev) override;
+	void                customEvent(QEvent* event) override;
 private:
+
+	virtual QRect       GetPaneRect() override;
+
 	ExplorerPanel*      CreateExplorerPanel();
-	void                SaveState(const char* filename, bool layoutOnly);
-	void                LoadState(const char* filename, bool layoutOnly);
-	void                LoadLayout(const char* name);
-	void                SaveLayout(const char* name);
-	void                RemoveLayout(const char* name);
+	void                SerializeLayout(Serialization::IArchive& ar);
+	void                SaveLayoutToFile(const char* filename);
+	void                LoadLayoutFromFile(const char* filename);
 	void                ResetLayout();
 	void                Initialize();
 	void                UpdateLayoutMenu();
 	void                UpdatePanesMenu();
 	void                UpdateViewportMode(ExplorerEntry* newEntry);
 	void                InstallMode(IViewportMode* mode, ExplorerEntry* modeEntry);
-	std::vector<string> FindLayoutNames();
-	void                CreateDefaultDockWidgets();
+	void                ResetDockWidgetsToDefault();
 	void                ReadViewportOptions(const ViewportOptions& options, const DisplayAnimationOptions& animationOptions);
 	void                LeaveMode();
 	void                OnMainFrameAboutToQuit(BroadcastEvent& event);
@@ -145,9 +150,11 @@ private:
 	SceneParametersPanel*                      m_sceneParametersPanel;
 	DisplayParametersPanel*                    m_displayParametersPanel;
 	AnimEventPresetPanel*                      m_animEventPresetPanel;
-	QTreeView*                                 m_characterTree;
 	QToolBar*                                  m_modeToolBar;
 	QToolButton*                               m_displayParametersButton;
+	QToolButton* 															 m_createProxyModeButton;
+	QToolButton* 															 m_clearProxiesButton;
+	QToolButton*                               m_testRagdollButton;
 	TransformPanel*                            m_transformPanel;
 
 	QMenu*                                     m_menuView;
@@ -165,9 +172,13 @@ private:
 	QAction*                                   m_actionLayoutLoadState;
 	QAction*                                   m_actionLayoutSaveState;
 
+	std::vector<char>                          m_defaultLayoutSnapshot;
+
 	bool                                       m_closed;
+	bool									   m_bHasFocus;
 };
 
 void ShowCharacterToolForm();
 
 }
+

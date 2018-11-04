@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 //
 //  Crytek Engine Source File.
 //  Copyright (C), Crytek Studios, 2002.
@@ -21,13 +21,14 @@
 #include "string.h"
 #include "IMultiplatformConfig.h"
 #include "IResCompiler.h"
+#include <CryString/CryPath.h>
 
 class IConfig;
 
 // IConvertContext is a description of what and how should be processed by compiler
 struct IConvertContext
 {
-	virtual void SetConvertorExtension(const char* convertorExtension) = 0;
+	virtual void SetConverterExtension(const char* converterExtension) = 0;
 
 	virtual void SetSourceFolder(const char* sourceFolder) = 0;
 	virtual void SetSourceFileNameOnly(const char* sourceFileNameOnly) = 0;
@@ -45,9 +46,9 @@ struct ConvertContext
 	//////////////////////////////////////////////////////////////////////////
 	// Interface IConvertContext
 
-	virtual void SetConvertorExtension(const char* convertorExtension)
+	virtual void SetConverterExtension(const char* converterExtension)
 	{
-		this->convertorExtension = convertorExtension;
+		this->converterExtension = converterExtension;
 	}
 
 	virtual void SetSourceFolder(const char* sourceFolder)
@@ -95,7 +96,7 @@ struct ConvertContext
 
 	const string GetSourcePath() const
 	{
-		return PathHelpers::Join(sourceFolder, sourceFileNameOnly).c_str();
+		return PathUtil::Make(sourceFolder, sourceFileNameOnly);
 	}
 
 	const string& GetOutputFolder() const
@@ -104,9 +105,9 @@ struct ConvertContext
 	}
 
 public:
-	// Convertor will assume that the source file has content matching this extension
+	// Converter will assume that the source file has content matching this extension
 	// (the sourceFileNameOnly can have a different extension, say 'tmp').
-	string convertorExtension;
+	string converterExtension;
 
 	// Source file's folder.
 	string sourceFolder;

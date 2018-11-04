@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 
@@ -53,8 +53,8 @@ CryGFxFileOpener::CryGFxFileOpener()
 
 CryGFxFileOpener& CryGFxFileOpener::GetAccess()
 {
-	static auto s_inst = new CryGFxFileOpener();
-	return *s_inst;
+	static auto s_pInst = new CryGFxFileOpener(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxFileOpener::~CryGFxFileOpener()
@@ -105,8 +105,8 @@ CryGFxURLBuilder::CryGFxURLBuilder()
 
 CryGFxURLBuilder& CryGFxURLBuilder::GetAccess()
 {
-	static auto s_inst = new CryGFxURLBuilder();
-	return *s_inst;
+	static auto s_pInst = new CryGFxURLBuilder(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxURLBuilder::~CryGFxURLBuilder()
@@ -155,11 +155,16 @@ void CryGFxURLBuilder::BuildURL(GString* pPath, const LocationInfo& loc)
 // CryGFxTextClipboard
 
 CryGFxTextClipboard::CryGFxTextClipboard()
+#if CRY_PLATFORM_WINDOWS
+	: m_bSyncingClipboardFromWindows(false)
+#endif // CRY_PLATFORM_WINDOWS
 {
 	if (auto pSystem = gEnv->pSystem)
 	{
 #if CRY_PLATFORM_WINDOWS
-		HandleMessage(reinterpret_cast<HWND>(pSystem->GetHWND()), WM_CLIPBOARDUPDATE, 0, 0, nullptr); // Sync current clipboard content with Scaleform
+		const HWND hWnd = reinterpret_cast<HWND>(pSystem->GetHWND());
+		AddClipboardFormatListener(hWnd);
+		HandleMessage(hWnd, WM_CLIPBOARDUPDATE, 0, 0, nullptr); // Sync current clipboard content with Scaleform
 #endif // CRY_PLATFORM_WINDOWS
 		pSystem->RegisterWindowMessageHandler(this);
 	}
@@ -170,25 +175,28 @@ CryGFxTextClipboard::~CryGFxTextClipboard()
 	if (gEnv && gEnv->pSystem)
 	{
 		gEnv->pSystem->UnregisterWindowMessageHandler(this);
+#if CRY_PLATFORM_WINDOWS
+		RemoveClipboardFormatListener(reinterpret_cast<HWND>(gEnv->pSystem->GetHWND()));
+#endif // CRY_PLATFORM_WINDOWS
 	}
 }
 
 CryGFxTextClipboard& CryGFxTextClipboard::GetAccess()
 {
-	static auto s_inst = new CryGFxTextClipboard();
-	return *s_inst;
+	static auto s_pInst = new CryGFxTextClipboard(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 void CryGFxTextClipboard::OnTextStore(const wchar_t* szText, UPInt length)
 {
 #if CRY_PLATFORM_WINDOWS
 	// Copy to windows clipboard
-	if (OpenClipboard(nullptr) != 0)
+	if (!m_bSyncingClipboardFromWindows && OpenClipboard(nullptr) != 0)
 	{
-		// Avoid endless notification loop
-		RemoveClipboardFormatListener(reinterpret_cast<HWND>(gEnv->pSystem->GetHWND()));
+		const HWND hWnd = reinterpret_cast<HWND>(gEnv->pSystem->GetHWND());
 
-		EmptyClipboard();
+		// Avoid endless notification loop
+		RemoveClipboardFormatListener(hWnd);
 
 		static_assert(sizeof(wchar_t) == 2, "sizeof(wchar_t) needs to be 2 to be compatible with Scaleform.");
 		const HGLOBAL clipboardData = GlobalAlloc(GMEM_DDESHARE, sizeof(wchar_t) * (length + 1));
@@ -201,7 +209,7 @@ void CryGFxTextClipboard::OnTextStore(const wchar_t* szText, UPInt length)
 
 		CloseClipboard();
 
-		AddClipboardFormatListener(reinterpret_cast<HWND>(gEnv->pSystem->GetHWND()));
+		AddClipboardFormatListener(hWnd);
 	}
 #endif // CRY_PLATFORM_WINDOWS
 }
@@ -217,7 +225,7 @@ bool CryGFxTextClipboard::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			const HANDLE wideData = GetClipboardData(CF_UNICODETEXT);
 			if (wideData)
 			{
-				const LPCWSTR pWideData = (LPCWSTR)GlobalLock(wideData);
+				const LPCWSTR pWideData = reinterpret_cast<LPCWSTR>(GlobalLock(wideData));
 				if (pWideData)
 				{
 					// Note: This conversion is just to make sure we discard malicious or malformed data
@@ -227,7 +235,9 @@ bool CryGFxTextClipboard::HandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			}
 			CloseClipboard();
 
+			m_bSyncingClipboardFromWindows = true;
 			SetText(data.c_str(), data.size());
+			m_bSyncingClipboardFromWindows = false;
 		}
 	}
 
@@ -245,8 +255,8 @@ CryGFxTranslator::CryGFxTranslator()
 
 CryGFxTranslator& CryGFxTranslator::GetAccess()
 {
-	static auto s_inst = new CryGFxTranslator();
-	return *s_inst;
+	static auto s_pInst = new CryGFxTranslator(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 void CryGFxTranslator::SetWordWrappingMode(const char* pLanguage)
@@ -335,8 +345,8 @@ CryGFxLog::CryGFxLog()
 
 CryGFxLog& CryGFxLog::GetAccess()
 {
-	static auto s_inst = new CryGFxLog();
-	return *s_inst;
+	static auto s_pInst = new CryGFxLog(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxLog::~CryGFxLog()
@@ -438,8 +448,8 @@ CryGFxFSCommandHandler::CryGFxFSCommandHandler()
 
 CryGFxFSCommandHandler& CryGFxFSCommandHandler::GetAccess()
 {
-	static auto s_inst = new CryGFxFSCommandHandler();
-	return *s_inst;
+	static auto s_pInst = new CryGFxFSCommandHandler(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxFSCommandHandler::~CryGFxFSCommandHandler()
@@ -463,8 +473,8 @@ CryGFxExternalInterface::CryGFxExternalInterface()
 
 CryGFxExternalInterface& CryGFxExternalInterface::GetAccess()
 {
-	static auto s_inst = new CryGFxExternalInterface();
-	return *s_inst;
+	static auto s_pInst = new CryGFxExternalInterface(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxExternalInterface::~CryGFxExternalInterface()
@@ -489,8 +499,8 @@ CryGFxUserEventHandler::CryGFxUserEventHandler()
 
 CryGFxUserEventHandler& CryGFxUserEventHandler::GetAccess()
 {
-	static auto s_inst = new CryGFxUserEventHandler();
-	return *s_inst;
+	static auto s_pInst = new CryGFxUserEventHandler(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxUserEventHandler::~CryGFxUserEventHandler()
@@ -511,8 +521,8 @@ CryGFxImageCreator::CryGFxImageCreator()
 
 CryGFxImageCreator& CryGFxImageCreator::GetAccess()
 {
-	static auto s_inst = new CryGFxImageCreator();
-	return *s_inst;
+	static auto s_pInst = new CryGFxImageCreator(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxImageCreator::~CryGFxImageCreator()
@@ -562,8 +572,8 @@ CryGFxImageLoader::CryGFxImageLoader()
 
 CryGFxImageLoader& CryGFxImageLoader::GetAccess()
 {
-	static auto s_inst = new CryGFxImageLoader();
-	return *s_inst;
+	static auto s_pInst = new CryGFxImageLoader(); // This pointer is released in ~GFxLoader2()
+	return *s_pInst;
 }
 
 CryGFxImageLoader::~CryGFxImageLoader()

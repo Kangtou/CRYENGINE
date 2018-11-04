@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "SceneElementProxyGeom.h"
@@ -10,7 +10,7 @@
 #include <CrySerialization/Enum.h>
 #include <CrySerialization/Math.h>
 
-#include <yasli/decorators/Range.h>
+#include <CrySerialization/yasli/decorators/Range.h>
 
 enum EPhysProxyType
 {
@@ -145,3 +145,4 @@ ESceneElementType CSceneElementProxyGeom::GetType() const
 {
 	return ESceneElementType::ProxyGeom;
 }
+

@@ -14,9 +14,11 @@ add_sources("NoUberFile"
 		"../../Tools/PRT/Legendre.h"
 		"../../Tools/PRT/MaterialFactory.h"
 		"../../Tools/PRT/MeshCoefficientStreams.h"
+		"../../Tools/PRT/ObjFace.h"
 		"../../Tools/PRT/PRTTypes.h"
 		"../../Tools/PRT/QuantizedSamplesHolder.h"
 		"../../Tools/PRT/SHAllocator.h"
+		"../../Tools/PRT/SHCompressionInfo.h"
 		"../../Tools/PRT/SHCompressor.h"
 		"../../Tools/PRT/SHFramework.h"
 		"../../Tools/PRT/SHFrameworkBasis.h"
@@ -95,10 +97,10 @@ if(WIN64)
 
 	target_include_directories(${THIS_PROJECT}
 	PRIVATE 
-		${CRYENGINE_DIR}/Code/Tools
-		${CRYENGINE_DIR}/Code/Tools/SphericalHarmonics
+		"${CRYENGINE_DIR}/Code/Tools"
+		"${CRYENGINE_DIR}/Code/Tools/SphericalHarmonics"
 	PUBLIC
-		${CRYENGINE_DIR}/Code/Tools/PRT
+		"${CRYENGINE_DIR}/Code/Tools/PRT"
 	)
 
 	target_compile_definitions(${THIS_PROJECT} PRIVATE -DPRT_COMPILE -DOFFLINE_COMPUTATION )

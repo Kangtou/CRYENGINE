@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -14,6 +14,9 @@ LONG CryInterlockedDecrement(int volatile* pDst);
 
 // Returns the resulting added value
 LONG CryInterlockedAdd(volatile LONG* pVal, LONG add);
+
+// Returns the resulting added value
+int64 CryInterlockedAdd(volatile int64* pVal, int64 add);
 
 // Returns the resulting added value
 size_t CryInterlockedAdd(volatile size_t* pVal, size_t add);
@@ -200,7 +203,7 @@ private:
 
 struct ReadLockCond
 {
-	ReadLockCond(volatile int& rw, int bActive) : prw(&rw), iActive(0)
+	ReadLockCond(volatile int& rw, int bActive) : iActive(0),prw(&rw)
 	{
 		if (bActive)
 		{

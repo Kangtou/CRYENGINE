@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 //
 //  Crytek Engine Source File.
 //  Copyright (C), Crytek Studios, 2012.
@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "IConvertor.h"
+#include "IConverter.h"
 #include "GeomCache.h"
 #include "ThreadUtils.h"
 #include "StealingThreadPool.h"

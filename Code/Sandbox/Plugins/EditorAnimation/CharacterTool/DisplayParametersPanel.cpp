@@ -1,8 +1,8 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
-#include <QPropertyTree/QPropertyTree.h>
+#include <Serialization/QPropertyTree/QPropertyTree.h>
 #include "Expected.h"
 #include "Serialization.h"
 #include "DisplayParametersPanel.h"
@@ -51,10 +51,7 @@ DisplayParametersPanel::~DisplayParametersPanel()
 
 void DisplayParametersPanel::Serialize(Serialization::IArchive& ar)
 {
-	if (ar.filter(SERIALIZE_STATE))
-	{
-		ar(*m_propertyTree, "propertyTree");
-	}
+	ar(*m_propertyTree, "propertyTree");
 }
 
 void DisplayParametersPanel::OnDisplayOptionsUpdated()
@@ -74,3 +71,4 @@ void DisplayParametersPanel::OnPropertyTreeChanged()
 }
 
 }
+

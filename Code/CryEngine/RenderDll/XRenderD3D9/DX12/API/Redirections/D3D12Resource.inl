@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include <array>
 #include <d3d12.h>
@@ -103,7 +103,7 @@ public:
 			{
 				Properties.VisibleNodeMask = pHeapProperties->CreationNodeMask | pHeapProperties->VisibleNodeMask;
 
-#if CRY_USE_DX12_MULTIADAPTER_SIMULATION
+#if DX12_LINKEDADAPTER_SIMULATION
 				// Always create on the first GPU, if running simulation
 				if (CRenderer::CV_r_StereoEnableMgpu < 0)
 					Properties.CreationNodeMask = Properties.VisibleNodeMask = 1;
@@ -121,7 +121,7 @@ public:
 			{
 				const UINT src = countTrailingZeros32(pHeapProperties->CreationNodeMask);
 				Share(i, m_Targets[src]);
-#if CRY_USE_DX12_MULTIADAPTER_SIMULATION
+#if DX12_LINKEDADAPTER_SIMULATION
 				deltaGPUAddresses[i] = deltaGPUAddresses[src];
 #endif
 			}
@@ -163,7 +163,7 @@ public:
 		m_Buffer = nullptr;
 #endif
 
-		DX12_ASSERT(m_Handle < DX12_MULTIGPU_NUM_RESOURCES, "Too many resources allocated, adjust the vector-size!");
+		DX12_ASSERT(this->m_Handle < DX12_MULTIGPU_NUM_RESOURCES, "Too many resources allocated, adjust the vector-size!");
 		DX12_ASSERT(Properties.VisibleNodeMask  != 0, "Visibility of 0 is not allowed in the broadcaster!");
 		DX12_ASSERT(Properties.CreationNodeMask != 0, "Creation   of 0 is not allowed in the broadcaster!");
 		for (int i = 0; i < numTargets; ++i)
@@ -183,7 +183,7 @@ public:
 			{
 				const UINT src = countTrailingZeros32(Properties.CreationNodeMask);
 				Share(i, m_Targets[src]);
-#if CRY_USE_DX12_MULTIADAPTER_SIMULATION
+#if DX12_LINKEDADAPTER_SIMULATION
 				deltaGPUAddresses[i] = deltaGPUAddresses[src];
 #endif
 			}
@@ -192,13 +192,13 @@ public:
 			else if (m_Targets[i] && (Desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER))
 			{
 				DX12_ASSERT(!IsShared(i), "GetGPUVirtualAddress is not valid on a shared resource");
-				deltaGPUAddresses[i] = m_Targets[i]->GetGPUVirtualAddress() - (UINT64(m_Handle) << 32);
+				deltaGPUAddresses[i] = m_Targets[i]->GetGPUVirtualAddress() - (UINT64(this->m_Handle) << 32);
 			}
 		}
 
 		if (Desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 		{
-			AssignGPUDeltasToHandle(m_Handle, deltaGPUAddresses);
+			AssignGPUDeltasToHandle(this->m_Handle, deltaGPUAddresses);
 		}
 	}
 
@@ -419,7 +419,7 @@ public:
 	  _In_opt_ const D3D12_RANGE* pReadRange,
 	  _Outptr_opt_result_bytebuffer_(_Inexpressible_("Dependent on resource"))  void** ppData) final
 	{
-#if CRY_USE_DX12_MULTIADAPTER_SIMULATION
+#if DX12_LINKEDADAPTER_SIMULATION
 		// Always create on the first GPU, if running simulation
 		if (CRenderer::CV_r_StereoEnableMgpu < 0)
 			return Pick(0, Map(Subresource, pReadRange, ppData));
@@ -454,7 +454,7 @@ public:
 	  UINT Subresource,
 	  _In_opt_ const D3D12_RANGE* pWrittenRange) final
 	{
-#if CRY_USE_DX12_MULTIADAPTER_SIMULATION
+#if DX12_LINKEDADAPTER_SIMULATION
 		// Always create on the first GPU, if running simulation
 		if (CRenderer::CV_r_StereoEnableMgpu < 0)
 			return Pick(0, Unmap(Subresource, pWrittenRange));

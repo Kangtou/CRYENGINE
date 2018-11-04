@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "IrisShafts.h"
@@ -61,7 +61,7 @@ IrisShafts::IrisShafts(const char* name)
 
 	m_meshDirty = true;
 
-	m_primitive.AllocateTypedConstantBuffer(eConstantBufferShaderSlot_PerBatch, sizeof(SShaderParams), EShaderStage_Vertex | EShaderStage_Pixel);
+	m_primitive.AllocateTypedConstantBuffer(eConstantBufferShaderSlot_PerPrimitive, sizeof(SShaderParams), EShaderStage_Vertex | EShaderStage_Pixel);
 }
 
 void IrisShafts::Load(IXmlNode* pNode)
@@ -252,13 +252,13 @@ bool IrisShafts::PreparePrimitives(const SPreparePrimitivesContext& context)
 
 	m_primitive.SetTechnique(CShaderMan::s_ShaderLensOptics, techName, rtFlags);
 	m_primitive.SetRenderState(GS_NODEPTHTEST | GS_BLSRC_ONE | GS_BLDST_ONE);
-	m_primitive.SetTexture(0, (m_bUseSpectrumTex && m_pSpectrumTex) ? m_pSpectrumTex.get() : CTexture::s_ptexBlack);
-	m_primitive.SetTexture(1, m_pBaseTex ? m_pBaseTex.get() : CTexture::s_ptexBlack);
-	m_primitive.SetSampler(0, m_samplerBilinearBorderBlack);
+	m_primitive.SetTexture(0, (m_bUseSpectrumTex && m_pSpectrumTex) ? m_pSpectrumTex.get() : CRendererResources::s_ptexBlack);
+	m_primitive.SetTexture(1, m_pBaseTex ? m_pBaseTex.get() : CRendererResources::s_ptexBlack);
+	m_primitive.SetSampler(0, EDefaultSamplerStates::LinearBorder_Black);
 
 	// update constants
 	{
-		auto constants = m_primitive.GetConstantManager().BeginTypedConstantUpdate<SShaderParams>(eConstantBufferShaderSlot_PerBatch, EShaderStage_Vertex | EShaderStage_Pixel);
+		auto constants = m_primitive.GetConstantManager().BeginTypedConstantUpdate<SShaderParams>(eConstantBufferShaderSlot_PerPrimitive, EShaderStage_Vertex | EShaderStage_Pixel);
 
 		for (int i = 0; i < context.viewInfoCount; ++i)
 		{
@@ -273,7 +273,6 @@ bool IrisShafts::PreparePrimitives(const SPreparePrimitivesContext& context)
 			if (i < context.viewInfoCount - 1)
 				constants.BeginStereoOverride(false);
 		}
-
 		m_primitive.GetConstantManager().EndTypedConstantUpdate(constants);
 	}
 
@@ -288,11 +287,12 @@ bool IrisShafts::PreparePrimitives(const SPreparePrimitivesContext& context)
 
 		ValidateMesh();
 
-		m_primitive.SetCustomVertexStream(m_vertexBuffer, eVF_P3F_C4B_T2F, sizeof(SVF_P3F_C4B_T2F));
+		m_primitive.SetCustomVertexStream(m_vertexBuffer, EDefaultInputLayouts::P3F_C4B_T2F, sizeof(SVF_P3F_C4B_T2F));
 		m_primitive.SetCustomIndexStream(m_indexBuffer, Index16);
 		m_primitive.SetDrawInfo(eptTriangleList, 0, 0, GetIndexCount());
 	}
 
+	m_primitive.Compile(context.pass);
 	context.pass.AddPrimitive(&m_primitive);
 
 	return true;

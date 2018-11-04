@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 // Qt item model for FbxTool scene.
 #pragma once
 
@@ -12,7 +12,7 @@
 
 class CryIcon;
 
-class QTreeView;
+class QAdvancedTreeView;
 class QVariant;
 
 class CSceneElementSkin;
@@ -32,6 +32,7 @@ public:
 	{
 		eColumnType_Name,
 		eColumnType_Type,
+		eColumnType_SourceNodeAttribute,
 		eColumnType_COUNT
 	};
 private:
@@ -77,6 +78,8 @@ private:
 
 	bool SetDataSourceNodeElement(const QModelIndex& index, const QVariant& value, int role);
 	bool SetDataSkinElement(const QModelIndex& index, const QVariant& value, int role);
+
+	CItemModelAttribute* GetColumnAttribute(int col) const;
 private:
 	DialogMesh::CSceneUserData* m_pSceneUserData;
 	FbxMetaData::SSceneUserSettings m_userSettings;
@@ -84,3 +87,4 @@ private:
 	CryIcon* const                  m_pExportIcon;
 	int                             m_iconDimension;
 };
+

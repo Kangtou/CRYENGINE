@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -37,10 +37,10 @@ public:
 
 	void Reset();
 
-	bool LoadScene(const char* fbxFilename, bool bVerboseLog, bool bCollectSkinningInfo);
+	bool LoadScene(const char* fbxFilename, bool bVerboseLog, bool bCollectSkinningInfo, bool bGenerateTextureCoordinates);
 
 private:
-	bool LoadScene_StaticMesh(const char* fbxFilename, bool bVerboseLog);
+	bool LoadScene_StaticMesh(const char* fbxFilename, bool bVerboseLog, bool bGenerateTextureCoordinates);
 
 	CryFbxSceneImpl* m_pImpl;
 };

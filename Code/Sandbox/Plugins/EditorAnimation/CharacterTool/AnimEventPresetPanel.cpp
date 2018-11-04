@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -8,8 +8,8 @@
 #include "BlockPaletteContent.h"
 #include <QBoxLayout>
 #include <QDir>
-#include <QPropertyTree/QPropertyTree.h>
-#include "../EditorCommon/QPropertyTree/ContextList.h"
+#include <Serialization/QPropertyTree/QPropertyTree.h>
+#include "QPropertyTree/ContextList.h"
 #include "Serialization.h"
 #include "Expected.h"
 #include "CharacterDocument.h"
@@ -199,3 +199,4 @@ void AnimEventPresetPanel::SavePresets()
 }
 
 }
+

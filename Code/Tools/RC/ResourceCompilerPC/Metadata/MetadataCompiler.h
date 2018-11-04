@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -6,7 +6,6 @@
 
 class CMetadataCompiler : public CSingleThreadedCompiler
 {
-	class CAssetFactory;
 public:
 	CMetadataCompiler(IResourceCompiler* pRc);
 	virtual ~CMetadataCompiler();
@@ -16,10 +15,9 @@ public:
 	virtual void EndProcessing() override;
 	virtual bool Process() override;
 
-	// Inherited via IConvertor
+	// Inherited via IConverter
 	virtual const char* GetExt(int index) const override;
 
 private:
-	IResourceCompiler*             m_pResourceCompiler;
-	std::unique_ptr<CAssetFactory> m_pAssetFactory;
+	IResourceCompiler* m_pResourceCompiler;
 };

@@ -1,4 +1,5 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
+
 #include "stdafx.h"
 #include "XMLConverter.h"
 #include "IRCLog.h"
@@ -18,7 +19,7 @@ XMLCompiler::XMLCompiler(
 	ICryXML* pCryXML,
 	const std::vector<XMLFilterElement>& filter,
 	const std::vector<string>& tableFilemasks,
-	const NameConvertor& nameConverter)
+	const NameConverter& nameConverter)
 	: m_refCount(1)
 	, m_pCryXML(pCryXML)
 	, m_pFilter(&filter)
@@ -55,12 +56,12 @@ void XMLConverter::Release()
 	}
 }
 
-void XMLConverter::Init(const ConvertorInitContext& context)
+void XMLConverter::Init(const ConverterInitContext& context)
 {
 	m_filter.clear();
 	m_tableFilemasks.clear();
 
-	if (!m_nameConvertor.SetRules(context.config->GetAsString("targetnameformat", "", "")))
+	if (!m_nameConverter.SetRules(context.config->GetAsString("targetnameformat", "", "")))
 	{
 		return;
 	}
@@ -104,7 +105,7 @@ void XMLConverter::Init(const ConvertorInitContext& context)
 				sLine.TrimLeft();
 				if (!sLine.empty())
 				{
-					m_tableFilemasks.push_back(PathHelpers::ToDosPath(sLine));
+					m_tableFilemasks.push_back(PathUtil::ToDosPath(sLine));
 				}
 			}
 			continue;
@@ -329,7 +330,7 @@ static string GetNormalizedFullPath(const string& relativePath)
 		return string();
 	}
 	// note: maybe normalization via ToDosPath() is unneeded, but MSDN is not very clear about it.
-	return PathHelpers::ToDosPath(string(fullname));
+	return PathUtil::ToDosPath(string(fullname));
 }
 
 static XmlNodeRef ConvertFromExcelXmlToCryEngineTableXml(XmlNodeRef root, IXMLSerializer* pSerializer, const string& sInputFile)
@@ -497,7 +498,7 @@ bool XMLCompiler::Process()
 	string sOutputFile = GetOutputPath();
 	if (m_pNameConverter->HasRules()) 
 	{
-		const string oldFilename = PathHelpers::GetFilename(sOutputFile);
+		const string oldFilename = PathUtil::GetFile(sOutputFile);
 		const string newFilename = m_pNameConverter->GetConvertedName(oldFilename);
 		if (newFilename.empty())
 		{
@@ -509,7 +510,7 @@ bool XMLCompiler::Process()
 			{
 				RCLog("Target file name changed: %s -> %s", oldFilename.c_str(), newFilename.c_str());
 			}
-			sOutputFile = PathHelpers::Join(PathHelpers::GetDirectory(sOutputFile), newFilename);
+			sOutputFile = PathUtil::Make(PathUtil::GetPathWithoutFilename(sOutputFile), newFilename);
 		}
 	}
 
@@ -585,7 +586,7 @@ bool XMLCompiler::Process()
 	// Convert Excel's XML format to CryEngine's table XML format, if requested.
 	{
 		bool bConvert = false;
-		const string filename = PathHelpers::ToDosPath(sInputFile);
+		const string filename = PathUtil::ToDosPath(sInputFile);
 		for (size_t i = 0; i < m_pTableFilemasks->size(); ++i)
 		{
 			if (StringHelpers::MatchesWildcardsIgnoreCase(filename, (*m_pTableFilemasks)[i]))
@@ -679,7 +680,7 @@ string XMLCompiler::GetOutputFileNameOnly() const
 
 string XMLCompiler::GetOutputPath() const
 {
-	return PathHelpers::Join(m_CC.GetOutputFolder(), GetOutputFileNameOnly());
+	return PathUtil::Make(m_CC.GetOutputFolder(), GetOutputFileNameOnly());
 }
 
 const char* XMLConverter::GetExt(int index) const
@@ -689,7 +690,7 @@ const char* XMLConverter::GetExt(int index) const
 
 ICompiler* XMLConverter::CreateCompiler()
 {
-	return new XMLCompiler(m_pCryXML, m_filter, m_tableFilemasks, m_nameConvertor);
+	return new XMLCompiler(m_pCryXML, m_filter, m_tableFilemasks, m_nameConverter);
 }
 
 bool XMLConverter::SupportsMultithreading() const

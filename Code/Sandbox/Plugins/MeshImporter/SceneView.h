@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #pragma once
 
 #include <QAdvancedTreeView.h>
@@ -7,7 +7,7 @@ class CSceneModel;
 class CComboBoxDelegate;
 
 class QAttributeFilterProxyModel;
-class QSearchBox;
+class QFilteringPanel;
 
 class CSceneViewContainer;
 
@@ -33,19 +33,19 @@ private:
 class CSceneViewContainer : public QWidget
 {
 public:
-	CSceneViewContainer(QAbstractItemModel* pModel, QTreeView* pView, QWidget* pParent = nullptr);
+	CSceneViewContainer(QAbstractItemModel* pModel, QAdvancedTreeView* pView, QWidget* pParent = nullptr);
 
 	const QAbstractItemModel*         GetModel() const;
-	const QTreeView*				  GetView() const;
+	const QAdvancedTreeView*		  GetView() const;
 	const QAttributeFilterProxyModel* GetFilter() const;
 
 	QAbstractItemModel*               GetModel();
 	QAbstractItemView*                GetView();
 
-	void SetSearchText(const QString& query);
 private:
 	std::unique_ptr<QAttributeFilterProxyModel> m_pFilterModel;
-	QAbstractItemModel*					m_pModel;
-	QTreeView*                          m_pView;
-	QSearchBox* m_pSearchBox;
+	QAbstractItemModel*					        m_pModel;
+	QAdvancedTreeView*                           m_pView;
+	QFilteringPanel* m_pFilteringPanel;
 };
+

@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -7,8 +7,8 @@
 #include <CryString/CryPath.h>
 #include "DBATable.h"
 #include "Serialization.h"
-#include <yasli/JSONIArchive.h>
-#include <yasli/JSONOArchive.h>
+#include <CrySerialization/yasli/JSONIArchive.h>
+#include <CrySerialization/yasli/JSONOArchive.h>
 #include <CrySystem/XML/IXml.h>
 
 void SDBAEntry::Serialize(IArchive& ar)
@@ -52,3 +52,4 @@ int SDBATable::FindDBAForAnimation(const SAnimationFilterItem& animation) const
 
 	return -1;
 }
+

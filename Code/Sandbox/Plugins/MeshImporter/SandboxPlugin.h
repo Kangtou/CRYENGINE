@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 // Sandbox plugin wrapper.
 #pragma once
 #include "IEditor.h"
@@ -10,39 +10,16 @@ class CFbxToolPlugin : public IPlugin
 public:
 	static CFbxToolPlugin* GetInstance();
 
-	explicit CFbxToolPlugin(IEditor* pEditor);
+	explicit CFbxToolPlugin();
+	~CFbxToolPlugin();
 
 	void SetPersonalizationProperty(const QString& propName, const QVariant& value);
 	const QVariant& GetPersonalizationProperty(const QString& propName);
 
-	virtual void        Release() override;
-
-	virtual const char* GetPluginGUID() override;
-
 	virtual const char* GetPluginName() override;
-
-	virtual DWORD       GetPluginVersion() override;
-
-	virtual bool        CanExitNow() override
-	{
-		return true;
-	}
-
-	virtual void ShowAbout() override
-	{
-		// not implemented
-	}
-
-	virtual void OnEditorNotify(EEditorNotifyEvent aEventId) override
-	{
-		// empty on purpose
-	}
-
-	IEditor* GetIEditor() const
-	{
-		return m_pEditor;
-	}
+	virtual const char* GetPluginDescription() override;
+	virtual int32       GetPluginVersion() override;
 
 private:
-	IEditor* m_pEditor;
 };
+

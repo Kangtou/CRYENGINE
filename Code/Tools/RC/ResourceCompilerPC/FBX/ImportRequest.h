@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -79,6 +79,7 @@ public:
 		bSceneOrigin = false;
 		bMergeAllNodes = false;
 		bIgnoreCustomNormals = false;
+		bIgnoreTextureCoordinates = false;
 
 		animation.startFrame = -1;
 		animation.endFrame = -1;
@@ -108,6 +109,7 @@ public:
 	bool bSceneOrigin;  // note: used only if !nodes.empty()
 	bool bMergeAllNodes;
 	bool bIgnoreCustomNormals;
+	bool bIgnoreTextureCoordinates;
 
 	// list of fbx scene nodes to import, may be empty.
 	std::vector<SNodeInfoType> nodes;

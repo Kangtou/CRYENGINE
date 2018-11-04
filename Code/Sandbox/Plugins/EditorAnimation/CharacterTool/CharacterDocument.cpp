@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -6,7 +6,6 @@
 #include <CryExtension/CryCreateClassInstance.h>
 #include "Serialization.h"
 #include <CrySystem/ISystem.h>
-#include <CryGame/IGameFramework.h>
 #include <CryAnimation/ICryAnimation.h>
 #include <IEditor.h>
 #include <CryInput/IInput.h>
@@ -15,7 +14,7 @@
 #include <CryPhysics/IPhysicsDebugRenderer.h>
 #include <CryAction/IMaterialEffects.h>
 #include "QViewport.h"
-#include "../EditorCommon/QPropertyTree/ContextList.h"
+#include "QPropertyTree/ContextList.h"
 #include <QViewportSettings.h>
 #include <IResourceSelectorHost.h>
 #include "DisplayParameters.h"
@@ -42,6 +41,9 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #undef IEntity
+
+namespace Private_CharacterDocument
+{
 
 static void DrawSkeletonBoundingBox(IRenderAuxGeom* pAuxGeom, const ICharacterInstance* pCharacter, const QuatT& location)
 {
@@ -304,6 +306,8 @@ static void DrawSkeleton(IRenderAuxGeom* pAuxGeom, IDefaultSkeleton* pDefaultSke
 	}
 }
 
+}
+
 namespace CharacterTool {
 
 ViewportOptions::ViewportOptions()
@@ -368,24 +372,39 @@ static MotionParameters QueryMotionParametersFromCharacterInstance(const ICharac
 
 	MotionParameters motionParameters;
 
-	const CAnimation& animation = character->GetISkeletonAnim()->GetAnimFromFIFO(layer, 0);
-	const SParametricSampler* sampler = animation.GetParametricSampler();
-	if (sampler)
+	const auto animationsCount = character->GetISkeletonAnim()->GetNumAnimsInFIFO(layer);
+	if (animationsCount > 0)
 	{
-		for (size_t i = 0; i < sampler->m_numDimensions; ++i)
+		const CAnimation& animation = character->GetISkeletonAnim()->GetAnimFromFIFO(layer, animationsCount - 1);
+		const SParametricSampler* sampler = animation.GetParametricSampler();
+		if (sampler)
 		{
-			const auto parameterId = sampler->m_MotionParameterID[i];
-			if (parameterId < eMotionParamID_COUNT)
+			for (size_t i = 0; i < sampler->m_numDimensions; ++i)
 			{
-				motionParameters.enabled[parameterId] = true;
-				motionParameters.rangeMin[parameterId] = 0.0f;
-				motionParameters.rangeMax[parameterId] = 1.0f;
-				character->GetIAnimationSet()->GetMotionParameterRange(animation.GetAnimationId(), EMotionParamID(parameterId), motionParameters.rangeMin[parameterId], motionParameters.rangeMax[parameterId]);
+				const auto parameterId = sampler->m_MotionParameterID[i];
+				if (parameterId < eMotionParamID_COUNT)
+				{
+					motionParameters.enabled[parameterId] = true;
+					motionParameters.rangeMin[parameterId] = 0.0f;
+					motionParameters.rangeMax[parameterId] = 1.0f;
+					character->GetIAnimationSet()->GetMotionParameterRange(animation.GetAnimationId(), EMotionParamID(parameterId), motionParameters.rangeMin[parameterId], motionParameters.rangeMax[parameterId]);
+				}
 			}
 		}
 	}
 
 	return motionParameters;
+}
+
+void TransferMotionParametersValues(const MotionParameters& from, MotionParameters& to)
+{
+	for (size_t i = 0; i < eMotionParamID_COUNT; ++i)
+	{
+		if (to.enabled[i])
+		{
+			to.values[i] = clamp_tpl(from.values[i], to.rangeMin[i], to.rangeMax[i]);
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -543,7 +562,6 @@ void CharacterDocument::ConnectExternalSignals()
 	EXPECTED(connect(m_system->scene.get(), SIGNAL(SignalLayerActivated()), this, SLOT(OnSceneLayerActivated())));
 	EXPECTED(connect(m_system->scene.get(), SIGNAL(SignalNewLayerActivated()), this, SLOT(OnSceneNewLayerActivated())));
 	EXPECTED(connect(m_system->explorerData.get(), SIGNAL(SignalEntryModified(ExplorerEntryModifyEvent &)), this, SLOT(OnExplorerEntryModified(ExplorerEntryModifyEvent &))));
-	EXPECTED(connect(m_system->explorerData.get(), &ExplorerData::SignalSelectedEntryClicked, this, &CharacterDocument::OnExplorerSelectedEntryClicked));
 	EXPECTED(connect(m_system->explorerData.get(), &ExplorerData::SignalEntrySavedAs, this, &CharacterDocument::OnExplorerEntrySavedAs));
 	EXPECTED(connect(m_system->characterList.get(), SIGNAL(SignalEntryModified(EntryModifiedEvent &)), this, SLOT(OnCharacterModified(EntryModifiedEvent &))));
 	EXPECTED(connect(m_system->characterList.get(), &ExplorerFileList::SignalEntrySavedAs, this, &CharacterDocument::OnCharacterSavedAs));
@@ -780,7 +798,7 @@ void CharacterDocument::LoadCharacter(const char* filename)
 
 		if (!m_groundAlignment)
 		{
-			::CryCreateClassInstance<IAnimationGroundAlignment>("AnimationPoseModifier_GroundAlignment", m_groundAlignment);
+			::CryCreateClassInstanceForInterface<IAnimationGroundAlignment>(cryiidof<IAnimationGroundAlignment>(), m_groundAlignment);
 		}
 
 		CreateShaderParamCallbacks();
@@ -873,14 +891,14 @@ void CharacterDocument::LoadCharacter(const char* filename)
 
 	ExplorerEntries selectedEntries;
 	GetSelectedExplorerEntries(&selectedEntries);
-	if (activeCharacterEntry && (selectedEntries.empty() ||
-	                             (selectedEntries.size() == 1 && m_system->characterList->OwnsAssetEntry(selectedEntries[0]))))
+	if (activeCharacterEntry && (selectedEntries.empty() || (selectedEntries.size() == 1 && m_system->characterList->OwnsAssetEntry(selectedEntries[0]))))
+	{
 		SetSelectedExplorerEntries(ExplorerEntries(1, activeCharacterEntry), 0);
+	}
 	else
+	{
 		SetSelectedExplorerEntries(ExplorerEntries(), 0);
-
-	TriggerAnimationPreview(0);
-
+	}
 }
 
 void CharacterDocument::ReleaseObject()
@@ -942,22 +960,15 @@ void CharacterDocument::OnSceneNewLayerActivated()
 
 void CharacterDocument::Serialize(IArchive& ar)
 {
-	if (ar.filter(SERIALIZE_STATE))
-	{
-		// Disable loading of the last character for now as it
-		// significantly increases time to open CharacterTool
-		//if (!ar.Filter(SERIALIZE_LAYOUT))
-		//	ar(m_currentCharacter, "currentCharacter");
-		ar(m_playbackOptions, "playbackOptions");
-		ar(*m_displayOptions, "displayOptions");
-		ar(m_playbackTime, "playbackTime");
+	ar(m_playbackOptions, "playbackOptions");
+	ar(*m_displayOptions, "displayOptions");
+	ar(m_playbackTime, "playbackTime");
 
-		if (ar.isInput())
-		{
-			SignalPlaybackOptionsChanged();
-			SignalDisplayOptionsChanged(*m_displayOptions);
-			UpdateBlendShapeParameterList();
-		}
+	if (ar.isInput())
+	{
+		SignalPlaybackOptionsChanged();
+		SignalDisplayOptionsChanged(*m_displayOptions);
+		UpdateBlendShapeParameterList();
 	}
 }
 
@@ -981,7 +992,7 @@ void CharacterDocument::OnCharacterModified(EntryModifiedEvent& ev)
 
 	bool skinSetChanged = false;
 	if (m_compressedCharacter.get())
-		entry->content.cdf.ApplyToCharacter(&skinSetChanged, m_compressedCharacter.get(), GetIEditor()->GetSystem()->GetIAnimationSystem(), true);
+		entry->content.cdf.ApplyToCharacter(&skinSetChanged, m_compressedCharacter.get(), GetIEditor()->GetSystem()->GetIAnimationSystem(), true, !!strcmp(ev.reason, "Revert"));
 	if (m_uncompressedCharacter.get())
 		entry->content.cdf.ApplyToCharacter(&skinSetChanged, m_uncompressedCharacter.get(), GetIEditor()->GetSystem()->GetIAnimationSystem(), false);
 
@@ -1005,6 +1016,8 @@ void CharacterDocument::OnCharacterModified(EntryModifiedEvent& ev)
 		if (m_uncompressedCharacter)
 			emptyRig.ApplyToCharacter(m_uncompressedCharacter);
 	}
+
+	Physicalize();
 
 	if (!ev.continuousChange)
 		SignalActiveCharacterChanged();
@@ -1039,6 +1052,11 @@ void CharacterDocument::GetEntriesActiveInDocument(ExplorerEntries* entries) con
 	ExplorerEntry* animationEntry = GetActiveAnimationEntry();
 	if (animationEntry)
 		entries->push_back(animationEntry);
+}
+
+void CharacterDocument::SetAuxRenderer(IRenderAuxGeom* pAuxRenderer)
+{
+	m_pAuxRenderer = pAuxRenderer;
 }
 
 ExplorerEntry* CharacterDocument::GetActivePhysicsEntry() const
@@ -1091,12 +1109,6 @@ void CharacterDocument::OnExplorerEntryModified(ExplorerEntryModifyEvent& ev)
 	if (!ev.entry)
 		return;
 
-	if (!ev.continuousChange)
-	{
-		if (m_system->animationList->OwnsAssetEntry(ev.entry))
-			PreviewAnimationEntry(false);
-	}
-
 	ExplorerEntry* activePhysicsEntry = GetActivePhysicsEntry();
 	if (ev.entry == activePhysicsEntry)
 	{
@@ -1130,7 +1142,12 @@ void CharacterDocument::OnExplorerEntryModified(ExplorerEntryModifyEvent& ev)
 		animation->content.ApplyToCharacter(&triggerPreview, m_compressedCharacter, animationPathConsideringCompression, false);
 
 		if (triggerPreview)
+		{
+			// these 2 lines are necessary for Scene Parameters panel to updated view immediately after a change
+			m_system->scene->PlaybackLayersChanged(false);
+			m_system->scene->SignalChanged(false);
 			TriggerAnimationPreview(0);
+		}
 	}
 	if (m_system->skeletonList->OwnsAssetEntry(ev.entry))
 	{
@@ -1166,17 +1183,6 @@ void CharacterDocument::OnExplorerEntryModified(ExplorerEntryModifyEvent& ev)
 				}
 			}
 		}
-	}
-}
-
-void CharacterDocument::OnExplorerSelectedEntryClicked(ExplorerEntry* entry)
-{
-	if (!entry)
-		return;
-
-	if (m_system->animationList->OwnsAssetEntry(entry))
-	{
-		TriggerAnimationPreview(PREVIEW_ALLOW_REWIND);
 	}
 }
 
@@ -1241,10 +1247,14 @@ void CharacterDocument::TriggerAnimationPreview(int previewFlags)
 		m_NormalizedTimeRate = 0.0f;
 		m_NormalizedTimeSmooth = 0.0f;
 		SignalPlaybackTimeChanged();
+		PreviewAnimationEntry(forceRecompile);
+		IdleUpdate();
 		Play();
 	}
-
-	PreviewAnimationEntry(forceRecompile);
+	else
+	{
+		PreviewAnimationEntry(forceRecompile);
+	}
 }
 
 void CharacterDocument::SetSelectedExplorerEntries(const ExplorerEntries& entries, int selectOptions)
@@ -1355,7 +1365,9 @@ void CharacterDocument::IdleUpdate()
 	{
 		PlaybackState playbackState;
 		if (!m_compressionMachine->IsPlaying() || m_bindPoseEnabled)
+		{
 			playbackState = PLAYBACK_UNAVAILABLE;
+		}
 		else
 		{
 			if (m_bPaused)
@@ -1375,7 +1387,9 @@ void CharacterDocument::IdleUpdate()
 					m_playbackBlockReason = "Playback Unavailable";
 			}
 			else
+			{
 				m_playbackBlockReason = "";
+			}
 			SignalPlaybackStateChanged();
 		}
 	}
@@ -1433,7 +1447,7 @@ void CharacterDocument::IdleUpdate()
 	}
 }
 
-static void DrawAnimationStateText(IRenderer* renderer, const vector<StateText>& lines)
+static void DrawAnimationStateText(IRenderer* renderer, IRenderAuxGeom* pAuxRenderer,  const vector<StateText>& lines)
 {
 	int y = 30;
 
@@ -1448,11 +1462,11 @@ static void DrawAnimationStateText(IRenderer* renderer, const vector<StateText>&
 		bool singleLine = l.animation.empty();
 		if (!singleLine)
 		{
-			IRenderAuxText::Draw2dLabel(20, y, 1.5f, ColorF(color), false, "%s", l.animation.c_str());
+			pAuxRenderer->Draw2dLabel(20, y, 1.5f, ColorF(color), false, "%s", l.animation.c_str());
 			y += 18;
 		}
 
-		IRenderAuxText::Draw2dLabel(singleLine ? 20 : 40, y, singleLine ? 1.5f : 1.2f, ColorF(color), false, "%s", l.text.c_str());
+		pAuxRenderer->Draw2dLabel(singleLine ? 20 : 40, y, singleLine ? 1.5f : 1.2f, ColorF(color), false, "%s", l.text.c_str());
 		y += singleLine ? 18 : 16;
 	}
 }
@@ -1572,7 +1586,7 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 		pInstanceBase->GetISkeletonPose()->SetForceSkeletonUpdate(1);
 
 		uint32 flags = m_compressedCharacter->GetCharEditMode() & ~CA_DrawSocketLocation;
-		if (m_displayOptions->attachmentAndPoseModifierGizmos)
+		if (m_displayOptions->attachmentGizmos || m_displayOptions->poseModifierGizmos)
 			flags |= CA_DrawSocketLocation;
 		m_compressedCharacter->SetCharEditMode(flags);
 
@@ -1641,27 +1655,18 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 		// get relative movement
 		QuatT relMove = skeletonAnim.GetRelMovement();
 
-		const int layerId = m_system->scene->layers.activeLayer;
-		const uint32 animationCount = skeletonAnim.GetNumAnimsInFIFO(layerId);
-		if (animationCount == 1)
+		// Determine normalizedTime/relativeMovement by actual selected (active) layer
+		const int activeLayerId = m_system->scene->layers.activeLayer;
+		const uint32 activeLayerAnimationCount = skeletonAnim.GetNumAnimsInFIFO(activeLayerId);
+		if (activeLayerAnimationCount == 1)
 		{
-			const f32 fSmoothTime = m_bPaused && m_playbackOptions.smoothTimelineSlider ? 0.2f : 0.0f;
-			SmoothCD(m_NormalizedTimeSmooth, m_NormalizedTimeRate, FrameTime, m_NormalizedTime, fSmoothTime);
-			CAnimation* pAnimation = &skeletonAnim.GetAnimFromFIFO(layerId, 0);
+			CAnimation* pAnimation = &skeletonAnim.GetAnimFromFIFO(activeLayerId, 0);
 			if (pAnimation)
 			{
 				if (m_bPaused)
 				{
 					//At this point the animation pose was already fully updated by StartAnimationProcessing(params)
 					relMove = m_lastCalculateRelativeMovement;  //if we set a new time with 'scrubbing' then we have to work with one frame delay (or we will see foot-sliding at low framerate)
-					//Set a new animation-time. We will see the effect one frame later.
-					skeletonAnim.SetAnimationNormalizedTime(pAnimation, m_NormalizedTimeSmooth, 1);
-					if (uncompressedCharacterUsed)
-					{
-						CAnimation* pUncompressedAnimation = &m_uncompressedCharacter->GetISkeletonAnim()->GetAnimFromFIFO(layerId, 0);
-						if (pUncompressedAnimation)
-							m_uncompressedCharacter->GetISkeletonAnim()->SetAnimationNormalizedTime(pUncompressedAnimation, m_NormalizedTimeSmooth, 1);
-					}
 					//Read back the new 'locator movement' immediately and use it next frame.
 					m_lastCalculateRelativeMovement = skeletonAnim.CalculateRelativeMovement(-1.0f); //there is no "delta-time" in scrub-mode
 				}
@@ -1669,6 +1674,30 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 				{
 					m_NormalizedTime = skeletonAnim.GetAnimationNormalizedTime(pAnimation);
 				}
+			}
+		}
+
+		// In case of scrubbing [paused animation]: set normalized time on all layers 
+		if (m_bPaused)
+		{
+			const f32 fSmoothTime = m_playbackOptions.smoothTimelineSlider ? 0.2f : 0.0f;
+			SmoothCD(m_NormalizedTimeSmooth, m_NormalizedTimeRate, FrameTime, m_NormalizedTime, fSmoothTime);
+			for (auto& it : m_system->scene->layers.layers)
+			{
+				const int& layerId = it.layerId;
+				const uint32 animationCount = skeletonAnim.GetNumAnimsInFIFO(layerId);
+				if (animationCount != 1) continue;
+
+				CAnimation* pAnimation = &skeletonAnim.GetAnimFromFIFO(layerId, 0);
+				if (!pAnimation) continue;
+
+				// Set a new animation-time. We will see the effect one frame later.
+				skeletonAnim.SetAnimationNormalizedTime(pAnimation, m_NormalizedTimeSmooth, 1);
+
+				if (!uncompressedCharacterUsed) continue;
+				CAnimation* pUncompressedAnimation = &m_uncompressedCharacter->GetISkeletonAnim()->GetAnimFromFIFO(layerId, 0);
+				if (!pUncompressedAnimation) continue;
+				m_uncompressedCharacter->GetISkeletonAnim()->SetAnimationNormalizedTime(pUncompressedAnimation, m_NormalizedTimeSmooth, 1);
 			}
 		}
 
@@ -1782,7 +1811,7 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 		if (m_AverageFrameTime > 0)
 		{
 			pe_params_flags pf;
-			pf.flagsOR = pef_update;
+			pf.flagsOR = pef_update | pef_ignore_areas;
 
 			IPhysicalEntity* pCharBasePhys = skeletonPose.GetCharacterPhysics();
 			if (pCharBasePhys)
@@ -1815,6 +1844,13 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 			pVars->iOutOfBounds = 3;
 			gEnv->pPhysicalWorld->TimeStep(m_AverageFrameTime, ent_independent | ent_living | ent_flagged_only);
 			pVars->iOutOfBounds = iOutOfBounds;
+
+			pf.flagsOR = 0;
+			pf.flagsAND = ~pef_update;
+			if (pCharBasePhys)
+				pCharBasePhys->SetParams(&pf);
+			for (int i = 0; skeletonPose.GetCharacterPhysics(i); i++)
+				skeletonPose.GetCharacterPhysics(i)->SetParams(&pf);
 		}
 
 		//	pInstanceBase->SetAttachmentLocation_DEPRECATED( m_PhysicalLocation );
@@ -1852,7 +1888,7 @@ void CharacterDocument::PreRender(const SRenderContext& context)
 
 void CharacterDocument::Render(const SRenderContext& context)
 {
-	FUNCTION_PROFILER(GetIEditor()->GetSystem(), PROFILE_EDITOR);
+	CRY_PROFILE_FUNCTION(PROFILE_EDITOR);
 
 	if (!m_compressedCharacter)
 		return;
@@ -1879,7 +1915,7 @@ void CharacterDocument::Render(const SRenderContext& context)
 	}
 
 	IRenderer* renderer = gEnv->pRenderer;
-	DrawAnimationStateText(renderer, m_compressedStateTextCache);
+	DrawAnimationStateText(renderer, m_pAuxRenderer, m_compressedStateTextCache);
 
 	if (m_system->scene->animEventPlayer)
 		m_system->scene->animEventPlayer->Update(m_compressedCharacter, QuatT(m_PhysicalLocation.q, m_PhysicalLocation.t), context.camera->GetMatrix());
@@ -1892,7 +1928,7 @@ void CharacterDocument::PreRenderOriginal(const SRenderContext& context)
 
 void CharacterDocument::RenderOriginal(const SRenderContext& context)
 {
-	FUNCTION_PROFILER(GetIEditor()->GetSystem(), PROFILE_EDITOR);
+	CRY_PROFILE_FUNCTION(PROFILE_EDITOR);
 
 	if (m_uncompressedCharacter)
 		DrawCharacter(m_uncompressedCharacter, context);
@@ -1900,15 +1936,15 @@ void CharacterDocument::RenderOriginal(const SRenderContext& context)
 	IRenderer* renderer = gEnv->pRenderer;
 
 	m_compressionMachine->GetAnimationStateText(&m_uncompressedStateTextCache, false);
-	DrawAnimationStateText(renderer, m_uncompressedStateTextCache);
+	DrawAnimationStateText(renderer, m_pAuxRenderer, m_uncompressedStateTextCache);
 }
 
 void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const SRenderContext& context)
 {
-	FUNCTION_PROFILER(GetIEditor()->GetSystem(), PROFILE_EDITOR);
+	using namespace Private_CharacterDocument;
+	CRY_PROFILE_FUNCTION(PROFILE_EDITOR);
 
-	IRenderAuxGeom* pAuxGeom = gEnv->pRenderer->GetIRenderAuxGeom();
-	pAuxGeom->SetRenderFlags(e_Def3DPublicRenderflags);
+	m_pAuxRenderer->SetRenderFlags(e_Def3DPublicRenderflags);
 
 	f32 FrameTime = GetIEditor()->GetSystem()->GetITimer()->GetFrameTime();
 	int yPos = 162;
@@ -1928,8 +1964,13 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 			if (filtered && (strstri(pJointName, m_displayOptions->skeleton.jointFilter) == 0))
 				continue;
 
-			QuatT jointTM = QuatT(m_PhysicalLocation * skeletonPose.GetAbsJointByID(j));
-			IRenderAuxText::DrawLabel(jointTM.t, 1, pJointName);
+			const QuatT jointTM = QuatT(m_PhysicalLocation * skeletonPose.GetAbsJointByID(j));
+
+			SDrawTextInfo ti;
+			ti.scale = Vec2(m_displayOptions->skeleton.showJointNamesFontSize);
+			ti.flags = EDrawTextFlags::eDrawText_FixedSize;
+
+			m_pAuxRenderer->RenderTextQueued(jointTM.t, ti, pJointName);
 		}
 	}
 
@@ -1937,7 +1978,7 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 	if (m_displayOptions->animation.showTrail && (m_displayOptions->animation.movement == CHARACTER_MOVEMENT_CONTINUOUS))
 	{
 		m_animDrivenSamples.Add(FrameTime, m_PhysicalLocation.t);
-		m_animDrivenSamples.Draw(pAuxGeom);
+		m_animDrivenSamples.Draw(m_pAuxRenderer);
 	}
 	else
 		m_animDrivenSamples.Reset();
@@ -1957,7 +1998,7 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 	const SRenderingPassInfo& passInfo = *context.passInfo;
 	gEnv->p3DEngine->PrecacheCharacter(NULL, 1.f, pInstanceBase, pInstanceBase->GetIMaterial(), m_LocalEntityMat, 0, 1.f, 4, true, passInfo);
 	pInstanceBase->SetViewdir(context.camera->GetViewdir());
-	pInstanceBase->Render(rp, QuatTS(IDENTITY), passInfo);
+	pInstanceBase->Render(rp, passInfo);
 
 	// draw DCC tool origin
 	if (m_displayOptions->animation.showDccToolOrigin)
@@ -1976,7 +2017,7 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 
 			const QuatT dccToolOrigin = dccToolOriginInv.GetInverted();
 
-			DrawFrame(pAuxGeom, dccToolOrigin, .3f);
+			DrawFrame(m_pAuxRenderer, dccToolOrigin, .3f);
 
 			IRenderAuxText::Draw2dLabel(12, 50, 1.6f, Col_White, false, "DCC Tool Origin: rot = %f (%f %f %f)", dccToolOrigin.q.w, dccToolOrigin.q.v.x, dccToolOrigin.q.v.y, dccToolOrigin.q.v.z);
 			IRenderAuxText::Draw2dLabel(12, 65, 1.6f, Col_White, false, "DCC Tool Origin: pos = %f %f %f", dccToolOrigin.t.x, dccToolOrigin.t.y, dccToolOrigin.t.z);
@@ -1984,16 +2025,22 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 	}
 
 	// draw physics
-	if (m_displayOptions->physics.showPhysicalProxies || m_displayOptions->physics.showRagdollJointLimits)
+	if (m_displayOptions->physics.showPhysicalProxies != DisplayPhysicsOptions::DISABLED || m_displayOptions->physics.showRagdollJointLimits != DisplayPhysicsOptions::NONE)
 	{
-		pAuxGeom->SetRenderFlags(e_Mode3D | e_AlphaBlended | e_FillModeSolid | e_CullModeNone | e_DepthWriteOff | e_DepthTestOn);
+		m_pAuxRenderer->SetRenderFlags(e_Mode3D | e_AlphaBlended | e_FillModeSolid | e_CullModeNone | e_DepthWriteOff | e_DepthTestOn);
 		IPhysicsDebugRenderer* pPhysRender = GetIEditor()->GetSystem()->GetIPhysicsDebugRenderer();
 		pPhysRender->UpdateCamera(*context.camera);
 		int iDrawHelpers = 0;
-		if (m_displayOptions->physics.showPhysicalProxies)
-			iDrawHelpers |= 2;
-		if (m_displayOptions->physics.showRagdollJointLimits)
-			iDrawHelpers |= 0x10;
+		switch (m_displayOptions->physics.showPhysicalProxies)
+		{
+			case DisplayPhysicsOptions::TRANSLUCENT: iDrawHelpers |= 1 << 29;
+			case DisplayPhysicsOptions::SOLID: iDrawHelpers |= 2;
+		}
+		switch (m_displayOptions->physics.showRagdollJointLimits)
+		{
+			case DisplayPhysicsOptions::SELECTED: iDrawHelpers |= 1 << 28 | m_displayOptions->physics.selectedBone << 16;
+			case DisplayPhysicsOptions::ALL: iDrawHelpers |= 0x10;
+		}
 		DrawPhysicalEntities(pPhysRender, pInstanceBase, iDrawHelpers);
 		pPhysRender->Flush(FrameTime);
 	}
@@ -2008,7 +2055,7 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 	pInstanceBase->SetCharEditMode(flags);
 
 	if (m_displayOptions->skeleton.showJoints)
-		DrawSkeleton(pAuxGeom, &pInstanceBase->GetIDefaultSkeleton(), pInstanceBase->GetISkeletonPose(), QuatT(m_PhysicalLocation), m_displayOptions->skeleton.jointFilter, m_viewportState->cameraTarget);
+		DrawSkeleton(m_pAuxRenderer, &pInstanceBase->GetIDefaultSkeleton(), pInstanceBase->GetISkeletonPose(), QuatT(m_PhysicalLocation), m_displayOptions->skeleton.jointFilter, m_viewportState->cameraTarget);
 
 	if (pInstanceBase == m_compressedCharacter)
 	{
@@ -2034,7 +2081,7 @@ void CharacterDocument::DrawCharacter(ICharacterInstance* pInstanceBase, const S
 	}
 
 	if (m_displayOptions->skeleton.showSkeletonBoundingBox)
-		DrawSkeletonBoundingBox(pAuxGeom, pInstanceBase, QuatT(m_PhysicalLocation));
+		DrawSkeletonBoundingBox(m_pAuxRenderer, pInstanceBase, QuatT(m_PhysicalLocation));
 }
 
 void CharacterDocument::CreateShaderParamCallbacks()
@@ -2328,7 +2375,7 @@ void CharacterDocument::EnableMotionParameters()
 	const int numLayers = m_system->scene->layers.layers.size();
 	for (int layer = 0; layer < numLayers; ++layer)
 	{
-		const MotionParameters& currentMotionParameters = QueryMotionParametersFromCharacterInstance(CompressedCharacter(), layer);
+		MotionParameters currentMotionParameters = QueryMotionParametersFromCharacterInstance(CompressedCharacter(), layer);
 		MotionParameters& storedMotionParameters = m_system->scene->layers.layers[layer].motionParameters;
 
 		for (size_t i = 0; i < eMotionParamID_COUNT; ++i)
@@ -2337,6 +2384,7 @@ void CharacterDocument::EnableMotionParameters()
 			    || currentMotionParameters.rangeMin[i] != storedMotionParameters.rangeMin[i]
 			    || currentMotionParameters.rangeMax[i] != storedMotionParameters.rangeMax[i])
 			{
+				TransferMotionParametersValues(storedMotionParameters, currentMotionParameters);
 				storedMotionParameters = currentMotionParameters;
 				playbackLayersChanged = true;
 				break;
@@ -2462,3 +2510,4 @@ void CharacterDocument::OnAnimationForceRecompile(const char* path)
 }
 
 }
+

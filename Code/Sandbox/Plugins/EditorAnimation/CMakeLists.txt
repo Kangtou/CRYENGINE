@@ -123,8 +123,6 @@ add_sources("Uber_Serialization.cpp"
 	SOURCE_GROUP "Root"
 		"Serialization.cpp"
 		"Serialization.h"
-	SOURCE_GROUP "Serialization %28EditorCommon%29"
-		"../EditorCommon/Serialization/QtImpl.h"
 	SOURCE_GROUP "Shared"
 		"Shared/AnimationFilter.cpp"
 		"Shared/AnimationFilter.h"
@@ -165,10 +163,11 @@ add_sources("Uber_Widgets.cpp"
 end_sources()
 #END-FILE-LIST
 
-CryPlugin(EditorAnimation PCH "stdafx.cpp" SOLUTION_FOLDER "Sandbox/Plugins")
+CryEditorPlugin(EditorAnimation PCH "stdafx.cpp" SOLUTION_FOLDER "Sandbox/Plugins")
 target_include_directories(${THIS_PROJECT} PRIVATE ..)
 target_include_directories(${THIS_PROJECT} PRIVATE ../../EditorQt)	
 target_include_directories(${THIS_PROJECT} PRIVATE ../../EditorQt/Include)
 target_link_libraries(${THIS_PROJECT} PRIVATE Sandbox)
 set_libpath_flag()
 set_property(TARGET ${THIS_PROJECT} APPEND_STRING PROPERTY LINK_FLAGS " ${LIBPATH_FLAG}OpenCollada/COLLADAStreamWriter/lib/win/Win32/Release")
+

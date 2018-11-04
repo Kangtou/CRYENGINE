@@ -1,12 +1,11 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #include "StdAfx.h"
 #include "MaterialHelpers.h"
 #include "FbxScene.h"
 #include "FbxMetaData.h"
 #include "SandboxPlugin.h"
-#include "TextureConversionDialog.h"
+#include "TextureManager.h"
 #include "DialogCommon.h"
-#include "ConvertToTifTask.h"
 
 #include <CryCore/ToolsHelpers/SettingsManagerHelpers.h>
 #include <CryCore/ToolsHelpers/ResourceCompilerHelper.h>
@@ -270,3 +269,20 @@ string GetMaterialNameFromFilePath(const string& filePath)
 	PathUtil::RemoveExtension(matFilename);
 	return matFilename;
 }
+
+const char* GetTextureSemanticFromChannelType(FbxTool::EMaterialChannelType channelType)
+{
+	switch (channelType)
+	{
+	case FbxTool::eMaterialChannelType_Diffuse:
+		return "Diffuse";
+	case FbxTool::eMaterialChannelType_Bump:
+		return "Bumpmap";
+	case FbxTool::eMaterialChannelType_Specular:
+		return "Specular";
+	default:
+		return nullptr;
+	}
+}
+
+

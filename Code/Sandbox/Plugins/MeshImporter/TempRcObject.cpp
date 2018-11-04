@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "TempRcObject.h"
@@ -83,8 +83,11 @@ void CTempRcObject::CreateAsync()
 	// Do not delete meta-data files to prevent Qt from reusing names.
 	pPayload->m_pMetaDataFile->setAutoRemove(false);
 
-	const QString rcOptions = QtUtil::ToQString(CRcCaller::OptionOverwriteExtension("fbx"));
-	m_pRcCaller->CallRc(metaDataFilename, pPayload.release(), m_pTaskHost, rcOptions, QtUtil::ToQString(m_message));
+	const string rcOptions = string().Format("%s %s", 
+		CRcCaller::OptionOverwriteExtension("fbx"),
+		CRcCaller::OptionVertexPositionFormat(m_metaData.bVertexPositionFormatF32));
+
+	m_pRcCaller->CallRc(metaDataFilename, pPayload.release(), m_pTaskHost, QtUtil::ToQString(rcOptions), QtUtil::ToQString(m_message));
 }
 
 string CTempRcObject::GetFilePath() const
@@ -111,3 +114,4 @@ void CTempRcObject::SetFinalize(const Finalize& finalize)
 {
 	m_finalize = finalize;
 }
+

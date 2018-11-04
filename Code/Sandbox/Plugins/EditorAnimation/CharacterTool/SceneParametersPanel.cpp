@@ -1,9 +1,9 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
-#include "../EditorCommon/QPropertyTree/ContextList.h"
-#include <QPropertyTree/QPropertyTree.h>
+#include "QPropertyTree/ContextList.h"
+#include <Serialization/QPropertyTree/QPropertyTree.h>
 #include "CharacterDocument.h"
 #include "Expected.h"
 #include "PlaybackLayers.h"
@@ -135,3 +135,4 @@ void SceneParametersPanel::OnSubselectionChanged(int layer)
 }
 
 }
+

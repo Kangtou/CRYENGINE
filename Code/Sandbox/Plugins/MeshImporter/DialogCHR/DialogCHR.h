@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -12,6 +12,8 @@ class CSkeletonPoseModifier;
 class CSceneElementCommon;
 class CSceneModelSkeleton;
 class CSplitViewportContainer;
+class CSceneViewCommon;
+class CSceneContextMenuCommon;
 class CModelProperties;
 class CMaterialGenerator;
 class CTempRcObject;
@@ -86,6 +88,7 @@ public:
 	virtual int          GetOpenFileFormatFlags() override { return eFileFormat_CHR; }
 
 	virtual void         AssignScene(const SImportScenePayload* pUserData) override;
+	virtual void         UnloadScene() override;
 
 	virtual const char*  GetDialogName() const override;
 	virtual bool         MayUnloadScene() override { return true; }
@@ -117,6 +120,11 @@ private:
 	void                 RenderPhysics(const SRenderContext& rc, ICharacterInstance* pCharacter);
 	void                 RenderCgf(const SRenderContext& rc);
 	virtual void         OnViewportRender(const SRenderContext& rc) override;
+	virtual void OnViewportMouse(const SMouseEvent& ev) override;
+
+	void PickJoint(QViewport& viewport, float x, float y);
+
+	void SelectJoint(int32 jointId);
 
 	std::unique_ptr<CSceneModelSkeleton> m_pSceneModel;
 	std::unique_ptr<SCharacter> m_pCharacter;
@@ -131,7 +139,13 @@ private:
 
 	SMaterial m_material;
 
+	// Bones.
+	std::vector<float> m_jointHeat;
+	int32 m_hitJointId;
+
 	// User interface.
+	CSceneViewCommon* m_pSceneView;
+	std::unique_ptr<CSceneContextMenuCommon> m_pSceneContextMenu;
 	std::unique_ptr<Private_DialogCHR::SViewSettings> m_pViewSettings;
 	CSplitViewportContainer*                    m_pViewportContainer;
 	Private_DialogCHR::CPreviewModeWidget* m_pPreviewModeWidget;
@@ -140,3 +154,4 @@ private:
 };
 
 } // namespace MeshImporter
+

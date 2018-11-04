@@ -1,3 +1,5 @@
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
+
 #include "StdAfx.h"
 
 #include "geometries.h"
@@ -154,6 +156,7 @@ bool PhysXVehicle::SetupPxVehicle()
 		return false;
 	if (m_vehicle)
 		return true;
+
 	int nwheels=m_wheels.size(), driveMask=0;
 	m_vehicle = PxVehicleDrive4W::allocate(nwheels);
 	PxVehicleWheelsSimData *wsd = PxVehicleWheelsSimData::allocate(nwheels);

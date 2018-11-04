@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "TargetMesh.h"
@@ -8,11 +8,11 @@
 #include "Cry3DEngine/CGF/CryHeaders.h"
 #include <Cry3DEngine/CGF/CGFContent.h>
 
-#include <yasli/Archive.h>
-#include <yasli/STL.h>
-#include <yasli/Enum.h>
-#include <yasli/JSONIArchive.h>
-#include <yasli/JSONOArchive.h>
+#include <CrySerialization/yasli/Archive.h>
+#include <CrySerialization/yasli/STL.h>
+#include <CrySerialization/yasli/Enum.h>
+#include <CrySerialization/yasli/JSONIArchive.h>
+#include <CrySerialization/yasli/JSONOArchive.h>
 
 void CTargetMeshModel::SItemProperties::Serialize(Serialization::IArchive& ar)
 {
@@ -181,13 +181,14 @@ CTargetMeshModel* CTargetMeshView::model()
 
 void CTargetMeshView::reset()
 {
-	QTreeView::reset();
+	QAdvancedTreeView::reset();
 	expandAll();
 }
 
 CTargetMeshView::CTargetMeshView(QWidget* pParent)
-	: QTreeView(pParent)
+	: QAdvancedTreeView(QAdvancedTreeView::Behavior(QAdvancedTreeView::PreserveExpandedAfterReset | QAdvancedTreeView::PreserveSelectionAfterReset), pParent)
 	, m_pModel(new CTargetMeshModel())
 {
 	setModel(m_pModel.get());
 }
+

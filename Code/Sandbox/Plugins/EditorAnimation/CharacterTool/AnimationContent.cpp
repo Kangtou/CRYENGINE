@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -88,14 +88,18 @@ void AnimationContent::UpdateBlendSpaceMotionParameters(IAnimationSet* animation
 {
 	for (size_t i = 0; i < blendSpace.m_examples.size(); ++i)
 	{
-		BlendSpaceExample& e = blendSpace.m_examples[i];
+		BlendSpaceExample& example = blendSpace.m_examples[i];
 		Vec4 v;
 		if (animationSet->GetMotionParameters(animationId, i, skeleton, v))
 		{
-			if (!e.specified[0]) e.parameters.x = v.x;
-			if (!e.specified[1]) e.parameters.y = v.y;
-			if (!e.specified[2]) e.parameters.z = v.z;
-			if (!e.specified[3]) e.parameters.w = v.w;
+			for (size_t k = 0; k < blendSpace.m_dimensions.size(); ++k)
+			{
+				const auto paramId = blendSpace.m_dimensions[k].parameterId;
+				if (!example.parameters[paramId].userDefined)
+				{
+					example.parameters[paramId].value = v[k];
+				}
+			}
 		}
 	}
 }
@@ -104,7 +108,7 @@ void AnimationContent::Serialize(Serialization::IArchive& ar)
 {
 	if (type == ANIMATION && importState == COMPILED_BUT_NO_ANIMSETTINGS)
 	{
-		ar.warning(this, "AnimSettings file used to compile the animation is missing. You may need to obtain it from version control.\n\nAlternatively you can create a new AnimSettings file.");
+		ar.warning(*this, "AnimSettings file used to compile the animation is missing. You may need to obtain it from version control.\n\nAlternatively you can create a new AnimSettings file.");
 		bool createNewAnimSettings = false;
 		ar(Serialization::ToggleButton(createNewAnimSettings), "createButton", "<Create New AnimSettings");
 		if (createNewAnimSettings)
@@ -208,3 +212,4 @@ void AnimationContent::Reset()
 }
 
 }
+

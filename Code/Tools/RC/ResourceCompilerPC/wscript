@@ -1,4 +1,4 @@
-# Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+# Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 def build(bld):
 	fbx_sdk_subfolder = 'vs2012'
@@ -46,5 +46,5 @@ def build(bld):
 		
 		export_definitions    = 'ResourceCompilerPlugin.def',
 
-		use_module = [ 'yasli', 'lua', 'vco' ]
+		use_module = [ 'lua', 'vco' ]
 	)

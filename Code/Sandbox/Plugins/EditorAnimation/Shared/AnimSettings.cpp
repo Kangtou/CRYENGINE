@@ -1,11 +1,11 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
 #include "AnimSettings.h"
 #include "Serialization.h"
-#include <yasli/JSONIArchive.h>
-#include <yasli/JSONOArchive.h>
+#include <CrySerialization/yasli/JSONIArchive.h>
+#include <CrySerialization/yasli/JSONOArchive.h>
 #include <CryCore/Assert/CryAssert.h>
 #include <CrySystem/XML/IXml.h>
 #include <CrySystem/ISystem.h>
@@ -565,3 +565,4 @@ void SCompressionSettings::Serialize(Serialization::IArchive& ar)
 		ar(m_controllerCompressionSettings, "perJointSettings");
 	}
 }
+

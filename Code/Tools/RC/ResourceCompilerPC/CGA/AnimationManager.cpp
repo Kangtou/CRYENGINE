@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "FileUtil.h"
@@ -13,6 +13,13 @@ static bool HeaderLessFuncAIM(const GlobalAnimationHeaderAIM* lhs, const GlobalA
 static bool HeaderLessFuncCAF(const GlobalAnimationHeaderCAF* lhs, const GlobalAnimationHeaderCAF* rhs)
 {
 	return lhs->m_FilePath < rhs->m_FilePath;
+}
+
+// Checks if the GlobalAnimationHeaderAIMs are empty, 
+// which indicates that calls to SaveAIMImage can be skipped for this instance.
+bool CAnimationManager::CanBeSkipped()
+{
+	return m_arrGlobalAIM.empty();
 }
 
 bool CAnimationManager::SaveAIMImage(const char* name, FILETIME timeStamp, bool bigEndianOutput)

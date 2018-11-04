@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #pragma once
 
@@ -13,7 +13,7 @@ namespace gpu
 
 struct CounterReadbackEmpty
 {
-	int Readback(ID3D11UnorderedAccessView* uav)
+	int Readback(CDeviceBuffer* pBuffer)
 	{
 		assert(0);
 		return 0;
@@ -23,15 +23,20 @@ struct CounterReadbackEmpty
 struct CounterReadbackUsed
 {
 	CounterReadbackUsed();
-	void Readback(ID3D11UnorderedAccessView* uav);
+	void Readback(CDeviceBuffer* pBuffer);
 	int  Retrieve();
 
 private:
-	D3DBuffer* m_countReadbackBuffer;
+	CGpuBuffer* m_countReadbackBuffer;
 #ifdef DURANGO
-	void*      m_basePtr;
+	void*       m_basePtr;
 #endif
-	bool       m_readbackCalled;
+
+#if CRY_RENDERER_VULKAN
+	uint64      m_readbackFence;
+#endif
+
+	bool        m_readbackCalled;
 };
 
 struct DataReadbackEmpty
@@ -47,19 +52,24 @@ struct DataReadbackEmpty
 
 struct DataReadbackUsed
 {
-	DataReadbackUsed(int size, int stride);
-	void Readback(ID3D11Buffer* buf, uint32 readLength);
+	DataReadbackUsed(uint32 size, uint32 stride);
+	void Readback(CGpuBuffer* buf, uint32 readLength);
 	const void* Map(uint32 readLength);
 	void Unmap();
 
 private:
-	ID3D11Buffer* m_readback;
+	CGpuBuffer* m_readback;
 #ifdef DURANGO
-	void*         m_basePtr;
+	void*       m_basePtr;
 #endif
-	uint32        m_stride;
-	uint32        m_size;
-	bool          m_readbackCalled;
+
+#if CRY_RENDERER_VULKAN
+	uint64      m_readbackFence;
+#endif
+
+	uint32      m_stride;
+	uint32      m_size;
+	bool        m_readbackCalled;
 };
 
 struct HostDataEmpty
@@ -80,7 +90,7 @@ struct BufferFlagsReadWrite
 {
 	enum
 	{
-		flags = DX11BUF_STRUCTURED | DX11BUF_BIND_SRV | DX11BUF_BIND_UAV
+		flags = CDeviceObjectFactory::BIND_SHADER_RESOURCE | CDeviceObjectFactory::BIND_UNORDERED_ACCESS
 	};
 	typedef CounterReadbackEmpty CounterReadback;
 	typedef DataReadbackEmpty    DataReadback;
@@ -91,7 +101,7 @@ struct BufferFlagsReadWriteReadback
 {
 	enum
 	{
-		flags = DX11BUF_STRUCTURED | DX11BUF_BIND_SRV | DX11BUF_BIND_UAV | DX11BUF_UAV_OVERLAP
+		flags = CDeviceObjectFactory::BIND_SHADER_RESOURCE | CDeviceObjectFactory::BIND_UNORDERED_ACCESS | CDeviceObjectFactory::USAGE_UAV_OVERLAP
 	};
 	typedef CounterReadbackEmpty CounterReadback;
 	typedef DataReadbackUsed     DataReadback;
@@ -102,7 +112,7 @@ struct BufferFlagsReadWriteAppend
 {
 	enum
 	{
-		flags = DX11BUF_STRUCTURED | DX11BUF_BIND_SRV | DX11BUF_BIND_UAV | DX11BUF_UAV_COUNTER
+		flags = CDeviceObjectFactory::BIND_SHADER_RESOURCE | CDeviceObjectFactory::BIND_UNORDERED_ACCESS | CDeviceObjectFactory::USAGE_UAV_COUNTER
 	};
 	typedef CounterReadbackUsed CounterReadback;
 	typedef DataReadbackEmpty   DataReadback;
@@ -113,33 +123,11 @@ struct BufferFlagsDynamic
 {
 	enum
 	{
-		flags = DX11BUF_STRUCTURED | DX11BUF_BIND_SRV | DX11BUF_DYNAMIC
+		flags = CDeviceObjectFactory::BIND_SHADER_RESOURCE | CDeviceObjectFactory::USAGE_CPU_WRITE
 	};
 	typedef CounterReadbackEmpty CounterReadback;
 	typedef DataReadbackEmpty    DataReadback;
 	typedef HostDataUsed         HostData;
-};
-
-struct BufferFlagsDynamicTyped
-{
-	enum
-	{
-		flags = DX11BUF_BIND_SRV | DX11BUF_DYNAMIC
-	};
-	typedef CounterReadbackEmpty CounterReadback;
-	typedef DataReadbackEmpty    DataReadback;
-	typedef HostDataUsed         HostData;
-};
-
-struct BufferFlagsReadWriteTyped
-{
-	enum
-	{
-		flags = DX11BUF_BIND_SRV | DX11BUF_BIND_UAV
-	};
-	typedef CounterReadbackEmpty CounterReadback;
-	typedef DataReadbackEmpty    DataReadback;
-	typedef HostDataEmpty        HostData;
 };
 
 template<typename BFlags> class CStridedResource
@@ -150,17 +138,19 @@ public:
 	{
 		m_buffer.Create(size, stride, DXGI_FORMAT_UNKNOWN, BFlags::flags, NULL);
 	}
+#if 0
 	ID3D11UnorderedAccessView* GetUAV()    { return m_buffer.GetDeviceUAV(); };
 	ID3D11ShaderResourceView*  GetSRV()    { return m_buffer.GetSRV(); };
 	ID3D11Buffer*              GetBuffer() { return m_buffer.GetBuffer(); };
+#endif
 
 	void                       UpdateBufferContent(void* pData, size_t nSize)
 	{
 		m_buffer.UpdateBufferContent(pData, m_stride * nSize);
 	};
-	void        ReadbackCounter() { return m_counterReadback.Readback(m_buffer.GetDeviceUAV()); };
+	void        ReadbackCounter() { return m_counterReadback.Readback(m_buffer.GetDevBuffer()); };
 	int         RetrieveCounter() { return m_counterReadback.Retrieve(); };
-	void        Readback()        { return m_dataReadback.Readback(m_buffer.GetBuffer()); };
+	void        Readback()        { return m_dataReadback.Readback(m_buffer.GetDevBuffer()); };
 	const void* Map()             { return (const void*)m_dataReadback.Map(); };
 	void        Unmap()           { return m_dataReadback.Unmap(); };
 
@@ -175,6 +165,16 @@ private:
 	DataReadback    m_dataReadback;
 };
 
+template<typename T> inline DXGI_FORMAT DXGI_FORMAT_DETECT() { return DXGI_FORMAT_UNKNOWN; }
+template<> inline DXGI_FORMAT DXGI_FORMAT_DETECT<int>() { return DXGI_FORMAT_R32_SINT; }
+template<> inline DXGI_FORMAT DXGI_FORMAT_DETECT<uint>() { return DXGI_FORMAT_R32_UINT; }
+template<> inline DXGI_FORMAT DXGI_FORMAT_DETECT<float>() { return DXGI_FORMAT_R32_FLOAT; }
+
+template<typename T> inline CDeviceObjectFactory::EResourceAllocationFlags USAGE_DETECT() { return CDeviceObjectFactory::USAGE_STRUCTURED; }
+template<> inline CDeviceObjectFactory::EResourceAllocationFlags USAGE_DETECT<int>() { return CDeviceObjectFactory::EResourceAllocationFlags(0); }
+template<> inline CDeviceObjectFactory::EResourceAllocationFlags USAGE_DETECT<uint>() { return CDeviceObjectFactory::EResourceAllocationFlags(0); }
+template<> inline CDeviceObjectFactory::EResourceAllocationFlags USAGE_DETECT<float>() { return CDeviceObjectFactory::EResourceAllocationFlags(0); }
+
 template<typename T, typename BFlags> class CTypedResource
 {
 public:
@@ -185,7 +185,7 @@ public:
 
 	void CreateDeviceBuffer()
 	{
-		m_buffer.Create(m_size, sizeof(T), DXGI_FORMAT_UNKNOWN, BFlags::flags, NULL);
+		m_buffer.Create(m_size, sizeof(T), DXGI_FORMAT_DETECT<T>(), USAGE_DETECT<T>() | BFlags::flags, NULL);
 	}
 	void FreeDeviceBuffer()
 	{
@@ -202,20 +202,20 @@ public:
 	{
 		UpdateBufferContent(m_hostData.Get(), m_size);
 	};
-	void UpdateBufferContent(void* pData, size_t nSize)
+	void UpdateBufferContent(const void* pData, size_t nSize)
 	{
 		m_buffer.UpdateBufferContent(pData, sizeof(T) * nSize);
 	};
-	void UpdateBufferContentAligned(void* pData, size_t nSize)
+	void UpdateBufferContentAligned(const void* pData, size_t nSize)
 	{
 		m_buffer.UpdateBufferContent(pData, Align(sizeof(T) * nSize, CRY_PLATFORM_ALIGNMENT));
 	};
-	void     ReadbackCounter()           { return m_counterReadback.Readback(m_buffer.GetDeviceUAV()); };
-	int      RetrieveCounter()           { return m_counterReadback.Retrieve(); };
-	void     Readback(uint32 readLength) { return m_dataReadback.Readback(m_buffer.GetBuffer(), readLength); };
-	const T* Map(uint32 readLength)      { return (const T*)m_dataReadback.Map(readLength); };
-	void     Unmap()                     { return m_dataReadback.Unmap(); };
-	bool     IsDeviceBufferAllocated()   { return m_buffer.GetBuffer() != nullptr; }
+	void     ReadbackCounter() { return m_counterReadback.Readback(m_buffer.GetDevBuffer()); };
+	int      RetrieveCounter() { return m_counterReadback.Retrieve(); };
+	void     Readback(uint32 readLength) { return m_dataReadback.Readback(&m_buffer, readLength); };
+	const T* Map(uint32 readLength) { return (const T*)m_dataReadback.Map(readLength); };
+	void     Unmap() { return m_dataReadback.Unmap(); };
+	bool     IsDeviceBufferAllocated() { return m_buffer.GetDevBuffer() != nullptr; }
 private:
 	const int  m_size;
 	CGpuBuffer m_buffer;
@@ -228,9 +228,11 @@ private:
 	HostData        m_hostData;
 };
 
-template<typename T> class CTypedConstantBuffer : public ::CTypedConstantBuffer<T>
+template<typename T, typename BFlags> using CStructuredResource = CTypedResource<T, BFlags>;
+
+template<typename T> class CTypedConstantBuffer : public ::CTypedConstantBuffer<T, 256>
 {
-	typedef typename ::CTypedConstantBuffer<T> TBase;
+	typedef typename ::CTypedConstantBuffer<T, 256> TBase;
 public:
 	bool IsDeviceBufferAllocated() { return TBase::m_constantBuffer != nullptr; }
 	T&   operator=(const T& hostData)

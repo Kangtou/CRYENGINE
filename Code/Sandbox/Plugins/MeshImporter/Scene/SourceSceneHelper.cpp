@@ -1,11 +1,15 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "Scene.h"
 #include "SceneElementSourceNode.h"
 #include "SceneElementSkin.h"
 #include "SceneElementTypes.h"
+#include "SceneModelCommon.h"
+#include "SceneView.h"
 #include "FbxScene.h"
+
+#include "ProxyModels/AttributeFilterProxyModel.h"
 
 namespace Private_SourceSceneHelpers
 {
@@ -97,3 +101,17 @@ CSceneElementSourceNode* FindSceneElementOfNode(CScene& scene, const FbxTool::SN
 
 	return nullptr;
 }
+
+void SelectSceneElementWithNode(CSceneModelCommon* pSceneModel, CSceneViewCommon* pSceneView, const FbxTool::SNode* pNode)
+{
+	CSceneElementCommon* const pSceneElement = pSceneModel->FindSceneElementOfNode(pNode);
+	const QModelIndex modelIndex = pSceneModel->GetModelIndexFromSceneElement(pSceneElement);
+	const auto pFilter = (QAttributeFilterProxyModel*)pSceneView->model();
+	const QModelIndex proxyIndex = pFilter->mapFromSource(modelIndex);
+	if (proxyIndex.isValid())
+	{
+		pSceneView->selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect);
+		pSceneView->scrollTo(modelIndex);
+	}
+}
+

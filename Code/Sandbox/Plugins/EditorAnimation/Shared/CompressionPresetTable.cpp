@@ -1,4 +1,4 @@
-// Copyright 2001-2017 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "stdafx.h"
 
@@ -7,8 +7,8 @@
 #include "AnimationFilter.h"
 #include "DBATable.h"
 #include "Serialization.h"
-#include <yasli/JSONIArchive.h>
-#include <yasli/JSONOArchive.h>
+#include <CrySerialization/yasli/JSONIArchive.h>
+#include <CrySerialization/yasli/JSONOArchive.h>
 
 void SCompressionPresetEntry::Serialize(Serialization::IArchive& ar)
 {
@@ -60,3 +60,4 @@ const SCompressionPresetEntry* SCompressionPresetTable::FindPresetForAnimation(c
 
 	return 0;
 }
+

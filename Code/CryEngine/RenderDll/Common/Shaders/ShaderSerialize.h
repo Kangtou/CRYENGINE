@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH / Crytek Group. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 /*=============================================================================
    ShaderSerialize.h : Shaders serialization declarations.
@@ -14,30 +14,6 @@
 #if defined(SHADERS_SERIALIZING)
 
 	#include "../ResFile.h"
-
-//
-//	console enums taken from d3d9types.h
-//
-
-enum X360AddressModes
-{
-	X360TADDRESS_WRAP                   = 0,
-	X360TADDRESS_MIRROR                 = 1,
-	X360TADDRESS_CLAMP                  = 2,
-	X360TADDRESS_MIRRORONCE             = 3,
-	X360TADDRESS_BORDER_HALF            = 4,
-	X360TADDRESS_MIRRORONCE_BORDER_HALF = 5,
-	X360TADDRESS_BORDER                 = 6,
-	X360TADDRESS_MIRRORONCE_BORDER      = 7,
-};
-
-enum X360FilterType
-{
-	X360TEXF_NONE        = 2,
-	X360TEXF_POINT       = 0,
-	X360TEXF_LINEAR      = 1,
-	X360TEXF_ANISOTROPIC = 4,
-};
 
 inline void sAlignData(TArray<byte>& Dst, uint32 align)
 {
@@ -75,19 +51,20 @@ template<typename T> void sAddData(TArray<byte>& Dst, T Src, uint32 align = 0)
 	}
 }
 
-template<typename T> void sAddDataArray_POD(TArray<byte>& Dst, TArray<T>& Src, uint32& nOffs, uint32 align = 0)
+template<typename Container> void sAddDataArray_POD(TArray<byte>& Dst, const Container& Src, uint32& nOffs, uint32 align = 0)
 {
+	using T = typename Container::value_type;
+
 	nOffs = Dst.Num();
-	int nSize = sizeof(T) * Src.Num();
+	int nSize = sizeof(T) * Src.size();
 	if (!nSize)
 		return;
 	T* pDst = (T*)Dst.Grow(nSize);
 
 	if (CParserBin::m_bEndians)
 	{
-		for (uint32 i = 0; i < Src.size(); i++)
+		for (auto d : Src)
 		{
-			T d = Src[i];
 			SwapEndian(d, eBigEndian);
 			memcpy(pDst, &d, sizeof(T));
 			pDst++;
@@ -104,7 +81,7 @@ template<typename T> void sAddDataArray_POD(TArray<byte>& Dst, TArray<T>& Src, u
 	}
 }
 
-template<typename T> void sExport(TArray<byte>& dst, T& data)
+template<typename T> void sExport(TArray<byte>& dst, const T& data)
 {
 	int startNum = dst.Num();
 
@@ -118,7 +95,7 @@ template<typename T> void sExport(TArray<byte>& dst, T& data)
 	}
 }
 
-template<typename T> void sAddDataArray(TArray<byte>& Dst, TArray<T>& Src, uint32& nOffs, uint32 align = 0)
+template<typename T> void sAddDataArray(TArray<byte>& Dst, const TArray<T>& Src, uint32& nOffs, uint32 align = 0)
 {
 	nOffs = Dst.Num();
 	int nSize = sizeof(T) * Src.Num();
@@ -157,9 +134,16 @@ template<typename T> void sAddDataArray(TArray<byte>& Dst, TArray<T>& Src, uint3
 
 template<typename T> void SwapEndianEnum(T& e, bool bSwapEndian)
 {
-	uint32 enumConv = e;
+	typename std::underlying_type<T>::type enumConv = typename std::underlying_type<T>::type(e);
 	SwapEndian(enumConv, bSwapEndian);
-	e = (T)enumConv;
+	e = T(enumConv);
+}
+
+template<typename T> void SwapEndianHandle(T& h, bool bSwapEndian)
+{
+	typename T::ValueType handleConv = typename T::ValueType(h);
+	SwapEndian(handleConv, bSwapEndian);
+	h = T(handleConv);
 }
 
 struct SSShaderCacheHeader
@@ -210,7 +194,7 @@ struct SSShader
 	uint32          m_Flags2;
 	uint32          m_nMDV;
 
-	EVertexFormat   m_eVertexFormat;   // Base vertex format for the shader (see VertexFormats.h)
+	InputLayoutHandle   m_eVertexFormat;   // Base vertex format for the shader (see VertexFormats.h)
 	ECull           m_eCull;           // Global culling type
 
 	EShaderType     m_eShaderType;
@@ -238,7 +222,7 @@ struct SSShader
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		uint32 startOffset = dst.Num();
 
@@ -287,7 +271,7 @@ struct SSShader
 			;
 			SwapEndian(m_Flags2, eBigEndian);
 			SwapEndian(m_nMDV, eBigEndian);
-			SwapEndianEnum(m_eVertexFormat, eBigEndian);
+			SwapEndianHandle(m_eVertexFormat, eBigEndian);
 			SwapEndianEnum(m_eCull, eBigEndian);
 			SwapEndianEnum(m_eShaderType, eBigEndian);
 			SwapEndian(m_nTechniques, eBigEndian);
@@ -322,7 +306,7 @@ struct SSShaderParam
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nameIdx);
 		sAddData(dst, (uint32)m_Type);
@@ -432,7 +416,7 @@ struct SSShaderTechnique
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nNameOffs);
 		sAddData(dst, m_nPassesOffs);
@@ -496,7 +480,7 @@ struct SSShaderPass
 
 	uint32 m_nRenderElemOffset;
 
-	void   Export(TArray<byte>& dst)
+	void   Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_RenderState);
 		sAddData(dst, m_eCull);
@@ -572,7 +556,7 @@ struct SCHWShader
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		uint32 startOffset = dst.Num();
 
@@ -629,7 +613,24 @@ struct SSTexSamplerFX
 	uint32    m_nTexFlags;
 	int       m_nRTIdx;
 	uint32    m_bTexState;
-	STexState ST;
+
+	struct
+	{
+		signed char m_nMinFilter  : 8;
+		signed char m_nMagFilter  : 8;
+		signed char m_nMipFilter  : 8;
+		signed char m_nAddressU   : 8;
+		signed char m_nAddressV   : 8;
+		signed char m_nAddressW   : 8;
+		signed char m_nAnisotropy : 8;
+		signed char padding       : 8;
+	};
+
+	DWORD     m_dwBorderColor;
+	bool      m_bActive;
+	bool      m_bComparison;
+	bool      m_bSRGBLookup;
+	byte      m_bPAD;
 
 	SSTexSamplerFX()
 	{
@@ -650,7 +651,7 @@ struct SSTexSamplerFX
 		return *this;
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nsName);
 		sAddData(dst, m_nsNameTexture);
@@ -661,21 +662,21 @@ struct SSTexSamplerFX
 		sAddData(dst, m_nRTIdx);
 		sAddData(dst, m_bTexState);
 
-		sAddData(dst, ST.m_nMinFilter);
-		sAddData(dst, ST.m_nMagFilter);
-		sAddData(dst, ST.m_nMipFilter);
-		sAddData(dst, ST.m_nAddressU);
-		sAddData(dst, ST.m_nAddressV);
-		sAddData(dst, ST.m_nAddressW);
-		sAddData(dst, ST.m_nAnisotropy);
-		sAddData(dst, ST.padding);
-		sAddData(dst, ST.m_dwBorderColor);
+		sAddData(dst, m_nMinFilter);
+		sAddData(dst, m_nMagFilter);
+		sAddData(dst, m_nMipFilter);
+		sAddData(dst, m_nAddressU);
+		sAddData(dst, m_nAddressV);
+		sAddData(dst, m_nAddressW);
+		sAddData(dst, m_nAnisotropy);
+		sAddData(dst, padding);
+		sAddData(dst, m_dwBorderColor);
 
 		uint32 iPad = 0;
 		sAddData(dst, iPad); //m_pDeviceState
-		sAddData(dst, ST.m_bActive);
-		sAddData(dst, ST.m_bComparison);
-		sAddData(dst, ST.m_bSRGBLookup);
+		sAddData(dst, m_bActive);
+		sAddData(dst, m_bComparison);
+		sAddData(dst, m_bSRGBLookup);
 		byte bPad = 0;
 		sAddData(dst, bPad);
 	}
@@ -694,13 +695,11 @@ struct SSTexSamplerFX
 			SwapEndian(m_nTexFlags, eBigEndian);
 			SwapEndian(m_nRTIdx, eBigEndian);
 			SwapEndian(m_bTexState, eBigEndian);
-			SwapEndian(ST.m_dwBorderColor, eBigEndian);
-			SwapEndian(ST.m_bActive, eBigEndian);
-			SwapEndian(ST.m_bComparison, eBigEndian);
-			SwapEndian(ST.m_bSRGBLookup, eBigEndian);
+			SwapEndian(m_dwBorderColor, eBigEndian);
+			SwapEndian(m_bActive, eBigEndian);
+			SwapEndian(m_bComparison, eBigEndian);
+			SwapEndian(m_bSRGBLookup, eBigEndian);
 		}
-
-		ST.PostCreate();
 	}
 };
 
@@ -732,7 +731,7 @@ struct SSHRenderTarget
 		return *this;
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, (uint32)m_eOrder);
 		sAddData(dst, m_nProcessFlags);
@@ -804,7 +803,7 @@ struct SSFXParam
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nsName);
 		sAddData(dst, m_nFlags);
@@ -864,7 +863,7 @@ struct SSFXSampler
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nsName);
 		sAddData(dst, m_nFlags);
@@ -922,7 +921,7 @@ struct SSFXTexture
 		memset(this, 0, sizeof(*this));
 	}
 
-	void Export(TArray<byte>& dst)
+	void Export(TArray<byte>& dst) const
 	{
 		sAddData(dst, m_nsName);
 		sAddData(dst, m_nsNameTexture);
@@ -1017,12 +1016,12 @@ public:
 	void ClearSResourceCache();
 
 private:
-	bool         _OpenSResource(float fVersion, SSShaderRes* pSR, CShader* pSH, int nCache, CResFile* pRF, bool bReadOnly);
+	bool         _OpenSResource(float fVersion, SSShaderRes* pSR, CShader* pSH, cacheSource nCache, CResFile* pRF, bool bReadOnly);
 	bool         OpenSResource(const char* szName, SSShaderRes* pSR, CShader* pSH, bool bDontUseUserFolder, bool bReadOnly);
 	bool         CreateSResource(CShader* pSH, SSShaderRes* pSR, CCryNameTSCRC& SName, bool bDontUseUserFolder, bool bReadOnly);
 	SSShaderRes* InitSResource(CShader* pSH, bool bDontUseUserFolder, bool bReadOnly);
 
-	bool         ExportHWShader(CHWShader* pShader, struct SShaderSerializeContext& SC);
+	bool         ExportHWShader(CShader* pSH, CHWShader* pShader, struct SShaderSerializeContext& SC);
 
 	CHWShader*   ImportHWShader(SShaderSerializeContext& SC, int nOffs, uint32 CRC32, CShader* pSH);
 
@@ -1031,7 +1030,6 @@ private:
 	bool         CheckFXBExists(CShader* pSH);
 
 	FXSShaderRes m_SShaderResources;
-	string       m_customSerialisePath;
 };
 
 inline const char* sString(int nOffs, TArray<char>& Strings)
